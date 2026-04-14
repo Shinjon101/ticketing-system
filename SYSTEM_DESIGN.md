@@ -101,7 +101,9 @@ This means:
 
 ### High-level overview
 
-![alt text](image.png)
+<img width="2450" height="2713" alt="image" src="https://github.com/user-attachments/assets/68a3da66-29bb-475d-a4fc-1f0083c26ab0" />
+
+
 
 ### Technology stack
 
