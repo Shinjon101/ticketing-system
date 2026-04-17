@@ -7,3 +7,6 @@ export const TOPICS = {
 } as const;
 
 export type Topic = (typeof TOPICS)[keyof typeof TOPICS];
+
+//dlq topic
+export const toDlqTopic = (topic: Topic): string => `${topic}.dlq`;

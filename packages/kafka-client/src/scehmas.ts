@@ -48,3 +48,13 @@ export type EventUpdated = z.infer<typeof EventUpdatedSchema>;
 export type SeatReserveRequested = z.infer<typeof SeatReserveRequestedSchema>;
 export type SeatReserved = z.infer<typeof SeatReservedSchema>;
 export type SeatFailed = z.infer<typeof SeatFailedSchema>;
+
+import { TOPICS } from "./topics";
+
+export const TOPIC_SCHEMAS = {
+  [TOPICS.EVENT_CREATED]: EventCreatedSchema,
+  [TOPICS.EVENT_UPDATED]: EventUpdatedSchema,
+  [TOPICS.SEAT_RESERVE_REQUESTED]: SeatReserveRequestedSchema,
+  [TOPICS.SEAT_RESERVED]: SeatReservedSchema,
+  [TOPICS.SEAT_FAILED]: SeatFailedSchema,
+} as const;
