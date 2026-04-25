@@ -17,5 +17,3 @@ export const { connectDB, db, disconnectDB, getPoolStats } = createDb({
     retryDelayMs: 1_000,
   },
 });
-
-export type { NodePgDatabase } from "drizzle-orm/node-postgres";

@@ -9,3 +9,6 @@ export type {
   SelectedFieldsOrdered,
   TableConfig,
 } from "drizzle-orm";
+
+export * from "drizzle-orm/node-postgres";
+export * from "drizzle-orm/node-postgres/migrator";

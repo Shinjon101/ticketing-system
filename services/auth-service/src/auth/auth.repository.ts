@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { NewRefreshToken, RefreshToken, refreshTokens } from "./auth.schema";
+import { NewRefreshToken, RefreshToken, refreshTokens } from "./auth.table";
 import { and, eq, gt, lt } from "@ticketing/db";
 
 export const authRepository = {

@@ -1,4 +1,4 @@
-import { users } from "@/users/user.schema";
+import { users } from "@/users/user.table";
 import { boolean, pgTable, relations, text, timestamp } from "@ticketing/db";
 
 export const refreshTokens = pgTable("refresh_tokens", {

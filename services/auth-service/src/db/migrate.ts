@@ -1,5 +1,4 @@
-import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { drizzle, migrate } from "@ticketing/db";
 import { Pool } from "pg";
 
 //reads DATABASE_URL directly from process.env so that migration failures are loud and obvious.
