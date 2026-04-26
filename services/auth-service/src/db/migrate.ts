@@ -1,5 +1,6 @@
 import { drizzle, migrate } from "@ticketing/db";
 import { Pool } from "pg";
+import "dotenv/config";
 
 //reads DATABASE_URL directly from process.env so that migration failures are loud and obvious.
 

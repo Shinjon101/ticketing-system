@@ -1,6 +1,6 @@
 import { pgEnum, pgTable, text, timestamp } from "@ticketing/db";
 
-const userRoleEnum = pgEnum("user_role", ["admin", "user"]);
+export const userRoleEnum = pgEnum("role", ["admin", "user"]);
 
 export const users = pgTable("users", {
   id: text("id")
