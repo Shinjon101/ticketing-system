@@ -1,7 +1,7 @@
 import { User } from "@/db/schema";
 import { userRepository } from "@/users/user.repository";
 import { HttpError } from "@ticketing/common";
-import brcypt from "bcrypt";
+import brcypt from "bcryptjs";
 import { authRepository } from "./auth.repository";
 import {
   generateRefreshToken,
