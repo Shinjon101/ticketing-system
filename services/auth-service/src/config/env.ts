@@ -7,7 +7,7 @@ export const envScham = z.object({
     .enum(["development", "production", "test"])
     .default("development"),
 
-  PORT: z.coerce.number().default(3000),
+  PORT: z.coerce.number().default(4003),
 
   DATABASE_URL: z.url().min(1, "DATABASE_URL is required"),
 

@@ -16,15 +16,18 @@ export interface RefreshTokenResult {
   expiresAt: Date;
 }
 
+const privateKey = env.JWT_PRIVATE_KEY.replace(/\\n/g, "\n");
+const publicKey = env.JWT_PUBLIC_KEY.replace(/\\n/g, "\n");
+
 export const signAccessToken = (payload: AccessTokenPayload): string => {
-  return jwt.sign(payload, env.JWT_PRIVATE_KEY, {
+  return jwt.sign(payload, privateKey, {
     algorithm: "RS256",
     expiresIn: env.JWT_ACCESS_EXPIRES_IN as jwt.SignOptions["expiresIn"],
   });
 };
 
 export const verifyAccessToken = (token: string): AccessTokenPayload => {
-  const decoded = jwt.verify(token, env.JWT_PUBLIC_KEY, {
+  const decoded = jwt.verify(token, publicKey, {
     algorithms: ["RS256"],
   });
 
