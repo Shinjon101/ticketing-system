@@ -5,6 +5,8 @@
     },
     "files": [],
     "references": [
-        { "path": "./packages/common" }
+        { "path": "./packages/common" },
+        { "path": "./packages/db" },
+        { "path": "./services/auth-service" }
     ]
 }
