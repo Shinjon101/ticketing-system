@@ -1,6 +1,6 @@
-import { Kafka, Producer, type ProducerConfig } from "kafkajs";
+import { Kafka, type ProducerConfig } from "kafkajs";
 import { type Logger } from "pino";
-import { TOPICS, type Topic } from "./topics";
+import { type Topic } from "./topics";
 
 export interface ProducerFactoryConfig {
   brokers: string[];
