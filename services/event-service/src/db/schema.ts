@@ -1,2 +1,2 @@
-export * from "@/events/event.table";
+export * from "@/events/events.table";
 export * from "@/outbox/outbox.table";
