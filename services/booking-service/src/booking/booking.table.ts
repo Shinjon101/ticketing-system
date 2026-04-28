@@ -18,6 +18,8 @@ export const bookings = pgTable("bookings", {
 
   seatId: text("seat_id"),
 
+  status: bookingStatusEnum("status").notNull().default("pending"),
+
   seatNumber: text("seat_number"),
 
   amount: integer("amount").notNull(),
