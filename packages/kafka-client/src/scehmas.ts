@@ -8,6 +8,7 @@ export const EventCreatedSchema = z.object({
   price: z.number().positive().positive(), //paise
   eventDate: z.iso.datetime(),
   status: z.enum(["active", "draft"]),
+  saleStartsAt: z.coerce.date().optional(),
 });
 
 export const EventUpdatedSchema = z.object({
