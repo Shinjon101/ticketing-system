@@ -4,9 +4,12 @@ import { startOutboxPoller, stopOutboxPoller } from "@/outbox/outbox.poller";
 import { createApp } from "@/app";
 import { env } from "@/config/env";
 import logger from "@/config/logger";
+import { connectRedis, disconnectRedis } from "./redis";
 
 const start = async () => {
   await connectDB();
+
+  await connectRedis();
 
   const producer = createKafkaProducer();
   await producer.connect();
@@ -31,6 +34,7 @@ const start = async () => {
       await new Promise((resolve) => setTimeout(resolve, 2_000));
 
       await producer.disconnect();
+      await disconnectRedis();
       await disconnectDB();
 
       logger.info("Event service shutdown complete");

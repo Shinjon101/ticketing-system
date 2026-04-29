@@ -14,6 +14,8 @@ export const envSchema = z.object({
 
   KAFKA_BROKERS: z.string().min(1, "KAFKA_BROKERS is required"),
 
+  REDIS_URL: z.string().min(1, "REDIS_URL is required"),
+
   LOG_LEVEL: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal"])
     .default("info"),
