@@ -4,12 +4,11 @@
   "private": true,
   "description": "",
   "type": "module",
-
   "scripts": {
     "build": "pnpm -r --workspace-root=false run build",
     "dev": "pnpm -r --workspace-root=false run dev",
     "lint": "pnpm -r --workspace-root=false run lint",
-    "format":  "pnpm -r --workspace-root=false run format",
+    "format": "pnpm -r --workspace-root=false run format",
     "test": "pnpm -r --workspace-root=false run test"
   },
   "keywords": [],
@@ -21,6 +20,7 @@
     "@types/node": "^25.3.0",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
+    "cross-env": "^10.1.0",
     "eslint": "^10.0.2",
     "prettier": "^3.8.1",
     "tsc-alias": "^1.8.8",
