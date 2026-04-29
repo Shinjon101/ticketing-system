@@ -32,7 +32,7 @@ export const connectRedis = async (): Promise<void> => {
   await redis.connect();
 };
 
-export const disconnecRedis = async (): Promise<void> => {
+export const disconnectRedis = async (): Promise<void> => {
   await redis.quit();
   logger.info("Redis disconnected");
 };

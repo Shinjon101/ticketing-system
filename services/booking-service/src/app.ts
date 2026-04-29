@@ -3,7 +3,7 @@ import express from "express";
 import logger from "./config/logger";
 import { getPoolStats } from "./db";
 
-const createApp = (): Application => {
+export const createApp = (): Application => {
   const app = express();
 
   app.use(express.json());
