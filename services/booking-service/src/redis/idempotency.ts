@@ -12,7 +12,7 @@ export const idempotencyCache = {
       bookingId,
       "EX",
       TTL_SECONDS,
-      "NX",
+      "NX", //not exists , i.e only do this if key does not exist
     );
 
     return result === "OK";
