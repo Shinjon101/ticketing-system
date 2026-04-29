@@ -4,6 +4,7 @@ import { Event } from "./events.table";
 import { db } from "@/db";
 import { outboxRepository } from "@/outbox/outbox.repository";
 import { TOPICS } from "@ticketing/kafka-client";
+import { eventsCache } from "./events.cache";
 
 export interface CreateEventInput {
   title: string;
@@ -29,12 +30,24 @@ export interface UpdateEventInput {
 
 export const eventService = {
   getAll: async (): Promise<Event[]> => {
-    return eventsRepository.findAll();
+    const cached = await eventsCache.getList();
+    if (cached) return cached;
+
+    const events = await eventsRepository.findAll();
+
+    await eventsCache.setList(events);
+
+    return events;
   },
 
   getById: async (id: string): Promise<Event> => {
-    const event = eventsRepository.findById(id);
+    const cached = await eventsCache.getDetail(id);
+    if (cached) return cached;
+
+    const event = await eventsRepository.findById(id);
     if (!event) throw new HttpError(404, "Event not found");
+
+    await eventsCache.setDetail(event);
     return event;
   },
 
@@ -59,6 +72,7 @@ export const eventService = {
       });
     });
 
+    await eventsCache.invalidateList();
     return created;
   },
 
@@ -89,6 +103,8 @@ export const eventService = {
         },
       });
     });
+
+    await eventsCache.invalidateDetail(id);
     return updated;
   },
 
@@ -117,5 +133,6 @@ export const eventService = {
         },
       });
     });
+    await eventsCache.invalidateDetail(id);
   },
 };
