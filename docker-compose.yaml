@@ -36,7 +36,41 @@ services:
      interval: 5s
      timeout: 5s
      retries: 5
+  
+  booking_db:
+    image: postgres:16-alpine
+    container_name: booking-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: booking_db
+    ports:
+      - "${BOOKING_DB_PORT:-5434}:5432"
+    volumes:
+      - booking-db-data:/var/lib/postgresql/data
+    networks:
+      - ticket-system-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - ticket-system-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  
 
   kafka:
     image: apache/kafka:latest
@@ -63,11 +97,11 @@ services:
     networks:
       - ticket-system-network
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
-      interval: 15s
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-metadata-quorum.sh --bootstrap-server localhost:9092 describe --status"]
+      interval: 10s     
       timeout: 10s
-      retries: 10
-      start_period: 30s
+      retries: 5
+      start_period: 15s
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
@@ -85,7 +119,9 @@ services:
 volumes:
   auth-db-data:
   event-db-data:
+  booking-db-data:
   kafka-data:
+  redis-data:
 
 networks:
   ticket-system-network:
