@@ -10,7 +10,7 @@ import {
 } from "@ticketing/kafka-client";
 import { env } from "./config/env";
 import logger from "./config/logger";
-import { eventCache } from "./redis/event-cache";
+import { eventCache } from "./redis/event.cache";
 import { bookingService } from "./booking/booking.service";
 
 export const createKafkaProducer = (): KafkaProducer => {
