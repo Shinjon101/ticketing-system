@@ -1,11 +1,12 @@
 import { HttpError } from "@ticketing/common";
 import { bookingRepository } from "./booking.repsoitory";
 import { Booking } from "./booking.table";
-import { eventCache } from "@/redis/event-cache";
+import { eventCache } from "@/redis/event.cache";
 import { idempotencyCache } from "@/redis/idempotency";
 import { db } from "@/db";
 import { outboxRepository } from "@/outbox/outbox.repository";
 import { SeatFailed, SeatReserved, TOPICS } from "@ticketing/kafka-client";
+import { bookingCache } from "@/redis/booking.cache";
 
 export interface CreateBookingInput {
   userId: string;
@@ -15,10 +16,18 @@ export interface CreateBookingInput {
 
 export const bookingService = {
   getById: async (id: string, userId: string): Promise<Booking> => {
-    const booking = await bookingRepository.findById(id);
-    if (!booking) throw new HttpError(404, "Booking not found");
+    let booking = await bookingCache.get(id);
 
-    if (booking.userId !== userId) throw new HttpError(403, "Forbidden");
+    if (!booking) {
+      booking = (await bookingRepository.findById(id)) as Booking;
+      if (!booking) throw new HttpError(404, "Booking not found");
+
+      await bookingCache.set(booking);
+    }
+
+    if (booking.userId !== userId) {
+      throw new HttpError(403, "Forbidden");
+    }
 
     return booking;
   },
@@ -88,19 +97,26 @@ export const bookingService = {
 
     if (await bookingRepository.isProcessed(messageId)) return;
 
-    await db.transaction(async (tx) => {
-      await bookingRepository.updateWithTx(tx as typeof db, bookingId, {
-        status: "confirmed",
-        seatId,
-        seatNumber,
-      });
+    const updatedBooking = await db.transaction(async (tx) => {
+      const updated = await bookingRepository.updateWithTx(
+        tx as typeof db,
+        bookingId,
+        {
+          status: "confirmed",
+          seatId,
+          seatNumber,
+        },
+      );
 
       await bookingRepository.markProcessedWithTx(
         tx as typeof db,
         messageId,
         TOPICS.SEAT_RESERVED,
       );
+      return updated;
     });
+
+    if (updatedBooking) await bookingCache.set(updatedBooking);
   },
 
   onSeatFailed: async (msg: SeatFailed): Promise<void> => {
@@ -108,16 +124,23 @@ export const bookingService = {
 
     if (await bookingRepository.isProcessed(messageId)) return;
 
-    await db.transaction(async (tx) => {
-      await bookingRepository.updateWithTx(tx as typeof db, bookingId, {
-        status: "failed",
-      });
+    const updatedBooking = await db.transaction(async (tx) => {
+      const updated = await bookingRepository.updateWithTx(
+        tx as typeof db,
+        bookingId,
+        {
+          status: "failed",
+        },
+      );
 
       await bookingRepository.markProcessedWithTx(
         tx as typeof db,
         messageId,
         TOPICS.SEAT_FAILED,
       );
+      return updated;
     });
+
+    if (updatedBooking) await bookingCache.set(updatedBooking);
   },
 };

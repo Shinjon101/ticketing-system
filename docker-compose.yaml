@@ -56,6 +56,25 @@ services:
       timeout: 5s
       retries: 5
 
+  inventory_db:
+    image: postgres:16-alpine
+    container_name: inventory-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: inventory_db
+    ports:
+      - "${INVENTORY_DB_PORT:-5435}:5432"
+    volumes:
+      - inventory-db-data:/var/lib/postgresql/data
+    networks:
+      - ticket-system-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5    
+
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -120,6 +139,7 @@ volumes:
   auth-db-data:
   event-db-data:
   booking-db-data:
+  inventory-db-data:
   kafka-data:
   redis-data:
 
