@@ -260,6 +260,52 @@ importers:
         specifier: ^5.8.0
         version: 5.9.3
 
+  services/inventory-service:
+    dependencies:
+      '@ticketing/common':
+        specifier: workspace:*
+        version: link:../../packages/common
+      '@ticketing/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@ticketing/kafka-client':
+        specifier: workspace:*
+        version: link:../../packages/kafka-client
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
+      express:
+        specifier: ^5.2.1
+        version: 5.2.1
+      ioredis:
+        specifier: ^5.3.2
+        version: 5.10.1
+      pg:
+        specifier: ^8.13.0
+        version: 8.20.0
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@types/express':
+        specifier: ^5.0.6
+        version: 5.0.6
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.17
+      '@types/pg':
+        specifier: ^8.11.0
+        version: 8.20.0
+      drizzle-kit:
+        specifier: ^0.31.10
+        version: 0.31.10
+      tsx:
+        specifier: ^4.19.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+
 packages:
 
   '@drizzle-team/brocli@0.10.2':
