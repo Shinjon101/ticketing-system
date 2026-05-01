@@ -63,7 +63,7 @@ async function poll(producer: KafkaProducer): Promise<void> {
       logger.info({ count: rows.length }, "Outbox poller: batch published");
     });
   } catch (err) {
-    logger.error({ err }, "Outbox poller: poll cycle failed — will retry");
+    logger.error({ err }, "Outbox poller: poll cycle failed: will retry");
   }
 }
 

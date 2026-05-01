@@ -1,4 +1,4 @@
-import { eq, sql } from "@ticketing/db";
+import { eq, inArray, sql } from "@ticketing/db";
 import { db } from "@/db";
 import {
   outboxEvents,
@@ -32,6 +32,6 @@ export const outboxRepository = {
     await tx
       .update(outboxEvents)
       .set({ published: true })
-      .where(sql`${outboxEvents.id} = ANY(${ids})`);
+      .where(inArray(outboxEvents.id, ids));
   },
 };
