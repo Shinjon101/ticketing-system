@@ -3,7 +3,7 @@ import { createDb } from "@ticketing/db";
 import { logger } from "@/config/logger";
 import * as schema from "./schema";
 
-export const {} = createDb({
+export const { connectDB, db, disconnectDB, getPoolStats } = createDb({
   connectionString: env.DATABASE_URL,
   serviceName: "inventory-service",
   schema,
