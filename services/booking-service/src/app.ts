@@ -2,6 +2,7 @@ import { Application } from "express";
 import express from "express";
 import logger from "./config/logger";
 import { getPoolStats } from "./db";
+import { bookingRouter } from "./booking/booking.routes";
 
 export const createApp = (): Application => {
   const app = express();
@@ -12,6 +13,8 @@ export const createApp = (): Application => {
     logger.debug({ method: req.method, path: req.path }, "Incoming request");
     next();
   });
+
+  app.use("/booking", bookingRouter);
 
   app.get("/health", (_req, res) => {
     const pool = getPoolStats();
