@@ -1,6 +1,10 @@
 import { authenticate } from "@/middleware/authenticate";
-import { Router  type Response, Request, NextFunction} from "express";
-import { createHandler, getAllHandler, getByIdHandler } from "./booking.controller";
+import { Router, type Response, Request, NextFunction } from "express";
+import {
+  createHandler,
+  getAllHandler,
+  getByIdHandler,
+} from "./booking.controller";
 import { HttpError, validateRequest } from "@ticketing/common";
 import { bookingIdParamSchema, createBookingSchema } from "./booking.schema";
 
@@ -16,11 +20,9 @@ bookingRouter.get(
   getByIdHandler,
 );
 
-
-
 bookingRouter.post(
   "/",
-  
+
   (req: Request, _res: Response, next: NextFunction) => {
     if (!req.headers["idempotency-key"]) {
       next(new HttpError(400, "Idempotency-Key header is required"));
@@ -29,6 +31,5 @@ bookingRouter.post(
     next();
   },
   validateRequest({ body: createBookingSchema }),
-  createHandler
+  createHandler,
 );
-

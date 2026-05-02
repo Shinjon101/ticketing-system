@@ -19,7 +19,7 @@ export interface CachedEvent {
   price: number;
   totalSeats: number;
   eventDate: string;
-  saleStartsAt: Date | null;
+  saleStartsAt: Date;
   status: "active" | "draft" | "cancelled";
 }
 
@@ -30,7 +30,7 @@ export const eventCache = {
       title: event.title,
       price: event.price,
       totalSeats: event.totalSeats,
-      saleStartsAt: event.saleStartsAt ?? null,
+      saleStartsAt: event.saleStartsAt ?? new Date(),
       eventDate: event.eventDate,
       status: event.status,
     };

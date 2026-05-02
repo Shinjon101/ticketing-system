@@ -49,11 +49,34 @@ export const startKafkaConsumer = async (): Promise<() => Promise<void>> => {
           "Event cache invalidated (cancelled)",
         );
       } else {
-        await eventCache.del(msg.eventId);
-        logger.info(
-          { eventId: msg.eventId },
-          "Event cache invalidated (updated)",
-        );
+        // Get existing event from cache
+        const cachedEvent = await eventCache.get(msg.eventId);
+        if (cachedEvent) {
+          // Merge changes with existing event data
+          const updatedEvent: EventCreated = {
+            messageId: msg.messageId,
+            eventId: msg.eventId,
+            title: msg.changes.title ?? cachedEvent.title,
+            price: msg.changes.price ?? cachedEvent.price,
+            totalSeats: msg.changes.totalSeats ?? cachedEvent.totalSeats,
+            status: (msg.changes.status ?? cachedEvent.status) as
+              | "active"
+              | "draft",
+            eventDate: cachedEvent.eventDate,
+            saleStartsAt: cachedEvent.saleStartsAt,
+          };
+          // Re-cache the updated event
+          await eventCache.set(updatedEvent);
+          logger.info(
+            { eventId: msg.eventId, changes: msg.changes },
+            "Event cache updated",
+          );
+        } else {
+          logger.warn(
+            { eventId: msg.eventId },
+            "Event not found in cache during update",
+          );
+        }
       }
     },
 
