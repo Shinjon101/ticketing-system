@@ -72,7 +72,7 @@ export const seatService = {
       await producer.publish(
         TOPICS.SEAT_FAILED,
         {
-          messageId: crypto.randomUUID,
+          messageId: crypto.randomUUID(),
           bookingId,
           reason: "no_seats_available",
         },

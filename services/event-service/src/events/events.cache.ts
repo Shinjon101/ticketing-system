@@ -2,7 +2,7 @@ import { redis } from "@/redis";
 import type { Event } from "./events.table";
 const KEYS = {
   LIST: "event:active",
-  DETAIL: (id: string) => `event:deatail:${id}`,
+  DETAIL: (id: string) => `event:detail:${id}`,
 };
 
 const TTL = {
