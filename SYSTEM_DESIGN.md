@@ -1,8 +1,8 @@
-# Ticketing System — System Design Document
+# Ticketing System - System Design Document
 
-**Status:** V1 — Implementation-focused  
-**Goal:** Learn system design, DevOps, scalability, and performance step-by-step  
-**Last updated:** April 2026
+**Status:** V1 - Implementation complete  
+**Goal:** Learn system design, distributed systems, and scalability through hands-on implementation  
+**Last updated:** May 2026
 
 ---
 
@@ -34,15 +34,15 @@
 
 ### Key problem being solved
 
-During a flash sale, thousands of users simultaneously attempt to book the last few available seats. Without proper locking and event-driven coordination, the system would oversell — confirming more bookings than seats exist. This system prevents that using Postgres row-level locking and an async saga pattern via Kafka.
+During a flash sale, thousands of users simultaneously attempt to book the last few available seats. Without proper locking and event-driven coordination, the system would oversell - confirming more bookings than seats exist. This system prevents that using Postgres row-level locking and an async saga pattern via Kafka.
 
 ### Seat assignment model
 
-This system uses **Model A — system assigns seats.** Users do not pick a specific seat. They request "1 seat for event X" and the system assigns the next available one. The assigned seat is returned in the booking confirmation.
+This system uses **Model A - system assigns seats.** Users do not pick a specific seat. They request "1 seat for event X" and the system assigns the next available one. The assigned seat is returned in the booking confirmation.
 
 This means:
 
-- `POST /bookings` takes `{ eventId }` — no `seatId` from the client
+- `POST /bookings` takes `{ eventId }` without `seatId` from the client
 - Inventory Service picks the seat using `FOR UPDATE SKIP LOCKED`
 - The assigned `seatId` only appears in the `seat.reserved` response event
 
@@ -55,13 +55,13 @@ This means:
 - Handle 1,000+ concurrent booking requests without overselling
 - Guarantee eventual consistency across services
 - Recover correctly from partial failures (service crash mid-saga)
-- Structured observability — metrics and logs
-- Keep the system simple — every component must justify its existence
+- Structured observability - metrics and logs
+- Keep the system simple - every component must justify its existence
 
 ### Non-goals
 
-- Not a full SaaS product — no billing, multi-tenancy, or polished UI
-- No real-time seat map — users don't pick specific seats (Model A)
+- Not a full SaaS product - no billing, multi-tenancy, or polished UI
+- No real-time seat map - users don't pick specific seats (Model A)
 - No email or SMS notifications in V1
 - No admin dashboard beyond basic REST APIs
 - No multi-region deployment
@@ -83,12 +83,12 @@ This means:
 - CI/CD (GitHub Actions)
 - Observability (Prometheus + Grafana + structured logs)
 
-### Excluded — deferred to later phases
+### Excluded - deferred to later phases
 
 - Payment Service (Phase 2)
 - API Gateway (Phase 2)
 - Notification Service (Phase 3)
-- Distributed tracing — OpenTelemetry + Jaeger (Phase 3)
+- Distributed tracing - OpenTelemetry + Jaeger (Phase 3)
 - AWS deployment + Terraform (Phase 4)
 
 ---
@@ -103,23 +103,21 @@ This means:
 
 <img width="2450" height="2713" alt="image" src="https://github.com/user-attachments/assets/68a3da66-29bb-475d-a4fc-1f0083c26ab0" />
 
-
-
 ### Technology stack
 
-| Concern          | Technology                         | Reason                                             |
-| ---------------- | ---------------------------------- | -------------------------------------------------- |
-| Runtime          | Node.js + TypeScript               | Async I/O suits event-driven architecture          |
-| Framework        | Express                            | Familiar, industry standard                        |
-| ORM              | Drizzle ORM                        | Lightweight, type-safe, raw SQL access when needed |
-| Database         | PostgreSQL 16                      | ACID guarantees, `FOR UPDATE` row-level locking    |
-| Message broker   | Apache Kafka                       | Durable, replayable, consumer group semantics      |
-| Cache            | Redis 7                            | Fast in-memory ops, TTL support, atomic NX ops     |
-| Containerisation | Docker (multi-stage builds)        | Reproducible environments                          |
-| Orchestration    | Kubernetes via Kind (local)        | Industry standard, horizontal scaling              |
-| CI/CD            | GitHub Actions                     | Integrated with repo                               |
-| Observability    | Prometheus + Grafana + Pino + Loki | Full metrics and structured log stack              |
-| Load testing     | k6                                 | Scriptable, handles 1000+ virtual users            |
+| Concern          | Technology                  | Reason                                             |
+| ---------------- | --------------------------- | -------------------------------------------------- |
+| Runtime          | Node.js + TypeScript        | Async I/O suits event-driven architecture          |
+| Framework        | Express                     | Familiar, industry standard                        |
+| ORM              | Drizzle ORM                 | Lightweight, type-safe, raw SQL access when needed |
+| Database         | PostgreSQL 16               | ACID guarantees, `FOR UPDATE` row-level locking    |
+| Message broker   | Apache Kafka                | Durable, replayable, consumer group semantics      |
+| Cache            | Redis 7                     | Fast in-memory ops, TTL support, atomic NX ops     |
+| Containerisation | Docker (multi-stage builds) | Reproducible environments                          |
+| Orchestration    | Kubernetes via Kind (local) | Industry standard, horizontal scaling              |
+| CI/CD            | GitHub Actions              | Integrated with repo                               |
+| Logging          | Pino                        | Structured JSON logging for traceability           |
+| Load testing     | k6                          | Scriptable, handles 1000+ virtual users            |
 
 ---
 
@@ -131,10 +129,10 @@ This means:
 | -------- | ----------------- | --------------------------------------------------------- |
 | Users    | Auth Service      | Other services read `userId` from the decoded JWT         |
 | Events   | Event Service     | Booking Service caches event metadata via `event.created` |
-| Seats    | Inventory Service | Seeded by consuming `event.created` — no direct access    |
+| Seats    | Inventory Service | Seeded by consuming `event.created` - no direct access    |
 | Bookings | Booking Service   | Inventory only knows `bookingId` as a plain reference     |
 
-`event_id` in the seats table is a plain UUID column — not a foreign key to Event Service's database.
+`event_id` in the seats table is a plain UUID column, not a foreign key to Event Service's database.
 
 ---
 
@@ -169,12 +167,12 @@ This means:
 
 **Produces (Kafka):**
 
-- `event.created` — when admin creates a new event
-- `event.updated` — when admin changes price, seat count, or status
+- `event.created` - when admin creates a new event
+- `event.updated` - when admin changes price, seat count, or status
 
 **Consumes (Kafka):** nothing in V1
 
-> Event Service does NOT own or manage seat rows. It only publishes event data.  
+> Event Service does NOT own or manage seat rows. It only publishes event data.
 > Inventory Service creates seat rows in its own DB by reacting to `event.created`.
 
 ---
@@ -191,13 +189,13 @@ This means:
 
 **Produces (Kafka):**
 
-- `seat.reserved` — seat successfully assigned to a booking
-- `seat.failed` — no seats available
+- `seat.reserved` - seat successfully assigned to a booking
+- `seat.failed` - no seats available
 
 **Consumes (Kafka):**
 
-- `event.created` → bulk inserts seat rows, sets Redis availability counter
-- `seat.reserve_requested` → picks and locks an available seat
+- `event.created` - bulk inserts seat rows, sets Redis availability counter
+- `seat.reserve_requested` - picks and locks an available seat
 
 **Locking strategy (Model A):**
 
@@ -211,10 +209,10 @@ LIMIT 1
 FOR UPDATE SKIP LOCKED;
 -- SKIP LOCKED: skip seats currently contested by other transactions.
 -- Each concurrent request gets a different seat rather than queuing on one.
--- If no rows returned: no available seats → emit seat.failed.
+-- If no rows returned: no available seats - emit seat.failed.
 ```
 
-**Why `SKIP LOCKED` for Model A:**  
+**Why `SKIP LOCKED` for Model A:**
 Under flash sale conditions, thousands of users all request "any available seat." `SKIP LOCKED` spreads those requests across all available seats. Each transaction takes a different seat instead of everyone fighting over seat 1. Once all seats are held, queries return empty and `seat.failed` is emitted.
 
 ---
@@ -225,46 +223,46 @@ Under flash sale conditions, thousands of users all request "any available seat.
 
 **Handles:**
 
-- Booking creation — validates event exists via Redis cache
+- Booking creation - validates event exists via Redis cache
 - Publishing `seat.reserve_requested` via the outbox pattern
 - Reacting to inventory outcomes and updating booking status
 - Idempotency enforcement — prevents duplicate bookings
 
 **Produces (Kafka):**
 
-- `seat.reserve_requested` — published via outbox poller
+- `seat.reserve_requested` - published via outbox poller
 
 **Consumes (Kafka):**
 
-- `event.created` → caches event metadata in Redis for local validation
-- `event.updated` → invalidates event cache in Redis
-- `seat.reserved` → transitions booking to `confirmed`
-- `seat.failed` → transitions booking to `failed`
+- `event.created` - caches event metadata in Redis for local validation
+- `event.updated` - invalidates event cache in Redis
+- `seat.reserved` - transitions booking to `confirmed`
+- `seat.failed` - transitions booking to `failed`
 
 **Booking state machine:**
 
 ```
-pending ──► confirmed   (terminal success in V1 — seat assigned and locked)
-        └─► failed      (terminal failure — no seats available)
+pending -> confirmed   (terminal success in V1 - seat assigned and locked)
+        -> failed      (terminal failure - no seats available)
 
-confirmed ──► cancelled (user cancels — triggers seat release in Inventory, Phase 2)
+confirmed -> cancelled (user cancels - triggers seat release in Inventory, Phase 2)
 ```
 
-> `confirmed` is the terminal success state in V1. Payment is Phase 2.  
+> `confirmed` is the terminal success state in V1. Payment is Phase 2.
 > A confirmed booking means a seat is locked in Inventory's database.
 
 ---
 
 ## 7. Data Models
 
-### Auth Service — `users`
+### Auth Service - `users`
 
 ```sql
 CREATE TABLE users (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email         TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  role          TEXT NOT NULL DEFAULT 'user',  -- 'user' | 'admin'
+  role          TEXT NOT NULL DEFAULT 'user',
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -279,7 +277,7 @@ CREATE TABLE refresh_tokens (
 
 ---
 
-### Event Service — `events`
+### Event Service - `events`
 
 ```sql
 CREATE TABLE events (
@@ -288,9 +286,9 @@ CREATE TABLE events (
   venue          TEXT NOT NULL,
   event_date     TIMESTAMPTZ NOT NULL,
   total_seats    INTEGER NOT NULL,
-  price          INTEGER NOT NULL,       -- in paise (smallest currency unit)
+  price          INTEGER NOT NULL,
   sale_starts_at TIMESTAMPTZ,
-  status         TEXT NOT NULL DEFAULT 'draft',  -- 'draft' | 'active' | 'cancelled'
+  status         TEXT NOT NULL DEFAULT 'draft',
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -298,21 +296,19 @@ CREATE TABLE events (
 
 ---
 
-### Inventory Service — `seats`
+### Inventory Service - `seats`
 
 ```sql
 CREATE TABLE seats (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  event_id    UUID NOT NULL,            -- plain UUID, NOT a FK to events DB
+  event_id    UUID NOT NULL,
   seat_number TEXT NOT NULL,
-  status      TEXT NOT NULL DEFAULT 'available',  -- 'available' | 'held' | 'booked'
-  held_by     UUID,                     -- bookingId currently holding this seat
+  status      TEXT NOT NULL DEFAULT 'available',
+  held_by     UUID,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
   UNIQUE (event_id, seat_number)
 );
 
--- Drives the FOR UPDATE SKIP LOCKED query
 CREATE INDEX idx_seats_event_available
   ON seats (event_id, seat_number)
   WHERE status = 'available';
@@ -320,24 +316,23 @@ CREATE INDEX idx_seats_event_available
 
 ---
 
-### Booking Service — `bookings`
+### Booking Service - `bookings`
 
 ```sql
 CREATE TABLE bookings (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id         UUID NOT NULL,
   event_id        UUID NOT NULL,
-  seat_id         UUID,                 -- NULL until seat.reserved arrives
+  seat_id         UUID,
   status          TEXT NOT NULL DEFAULT 'pending',
-                  -- 'pending' | 'confirmed' | 'failed' | 'cancelled'
-  amount          INTEGER NOT NULL,     -- price at time of booking, in paise
+  amount          INTEGER NOT NULL,
   idempotency_key TEXT UNIQUE,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 
-### Booking Service — `outbox_events`
+### Booking Service - `outbox_events`
 
 ```sql
 CREATE TABLE outbox_events (
@@ -348,19 +343,18 @@ CREATE TABLE outbox_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Poller only scans unpublished rows
 CREATE INDEX idx_outbox_unpublished
   ON outbox_events (created_at)
   WHERE published = FALSE;
 ```
 
-### All Kafka-consuming services — `processed_events`
+### All Kafka-consuming services - `processed_events`
 
 Each service that consumes Kafka events has its own copy:
 
 ```sql
 CREATE TABLE processed_events (
-  message_id   TEXT PRIMARY KEY,    -- messageId from Kafka payload
+  message_id   TEXT PRIMARY KEY,
   topic        TEXT NOT NULL,
   processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -370,8 +364,8 @@ CREATE TABLE processed_events (
 
 ## 8. Kafka Event Contracts
 
-All payloads are defined as Zod schemas in `packages/kafka-client/schemas.ts`.  
-Producers get a compile-time error for malformed payloads.  
+All payloads are defined as Zod schemas in `packages/kafka-client/src/scehmas.ts`.
+Producers get a compile-time error for malformed payloads.
 Consumers get a runtime validation error and route to a Dead Letter Queue.
 
 ---
@@ -383,12 +377,12 @@ Consumers get a runtime validation error and route to a Dead Letter Queue.
 
 ```typescript
 {
-  messageId: string; // UUID — for consumer idempotency
+  messageId: string;
   eventId: string;
   title: string;
   totalSeats: number;
-  price: number; // in paise — Booking needs this for amount validation
-  eventDate: string; // ISO 8601
+  price: number;
+  eventDate: string;
   status: "active" | "draft";
 }
 ```
@@ -422,15 +416,15 @@ Consumers get a runtime validation error and route to a Dead Letter Queue.
 
 ```typescript
 {
-  messageId: string; // UUID — for consumer idempotency
+  messageId: string;
   bookingId: string;
   userId: string;
   eventId: string;
-  requestedAt: string; // ISO 8601
+  requestedAt: string;
 }
 ```
 
-> No `seatId` here. The client does not choose a seat.  
+> No `seatId` here. The client does not choose a seat.
 > Inventory picks the seat. `seatId` only appears in `seat.reserved`.
 
 ---
@@ -444,9 +438,9 @@ Consumers get a runtime validation error and route to a Dead Letter Queue.
 {
   messageId: string;
   bookingId: string;
-  seatId: string; // assigned by Inventory — first time seatId appears
-  seatNumber: string; // human-readable e.g. "Seat 42"
-  reservedAt: string; // ISO 8601
+  seatId: string;
+  seatNumber: string;
+  reservedAt: string;
 }
 ```
 
@@ -465,33 +459,30 @@ Consumers get a runtime validation error and route to a Dead Letter Queue.
 }
 ```
 
----
-
-> **Not in V1:**  
-> `booking.confirmed`, `payment.completed`, `payment.failed`, and `booking.expired`
-> do not exist in V1. The saga ends at `seat.reserved` → booking `confirmed`.  
+> Not in V1: `booking.confirmed`, `payment.completed`, `payment.failed`, and `booking.expired`
+> do not exist in V1. The saga ends at `seat.reserved` - booking `confirmed`.
 > These topics will be introduced in Phase 2 when Payment Service is added.
 
 ---
 
 ## 9. Redis Usage
 
-> Redis is never the source of truth. Postgres always is.  
-> Redis is a performance layer only.
+Redis is never the source of truth. Postgres always is.
+Redis is a performance layer only.
 
 | Key pattern                 | Owner             | Strategy      | TTL   | Purpose                                          |
 | --------------------------- | ----------------- | ------------- | ----- | ------------------------------------------------ |
 | `event:{eventId}`           | Booking Service   | Cache-aside   | 1 hr  | Validate event locally without calling Event Svc |
 | `idempotency:{key}`         | Booking Service   | NX flag       | 24 hr | Prevent duplicate booking submissions            |
-| `seats:available:{eventId}` | Inventory Service | Write-through | none  | Fast availability display — not used for locking |
+| `seats:available:{eventId}` | Inventory Service | Write-through | none  | Fast availability display                        |
 
-### Cache-aside — event metadata
+### Cache-aside - event metadata
 
 ```typescript
 // Booking Service consumes event.created:
 await redis.set(`event:${eventId}`, JSON.stringify(payload), "EX", 3600);
 
-// At booking request time — no HTTP call to Event Service:
+// At booking request time - no HTTP call to Event Service:
 const cached = await redis.get(`event:${eventId}`);
 if (!cached) throw new EventNotFoundError(eventId);
 const event = JSON.parse(cached);
@@ -517,7 +508,7 @@ await redis.del(`event:${eventId}`);
 const key = `idempotency:${idempotencyKey}`;
 const set = await redis.set(key, bookingId, "NX", "EX", 86400);
 if (!set) {
-  // Already processed — return the original booking
+  // Already processed - return the original booking
   return getBookingById(existingBookingId);
 }
 ```
@@ -529,13 +520,13 @@ if (!set) {
 ### 10.1 Successful booking
 
 ```
-① Client → POST /bookings
-   Body: { eventId }          ← no seatId, user does not choose
+① Client -> POST /bookings
+   Body: { eventId }          <- no seatId, user does not choose
    Headers: Idempotency-Key: <uuid>
 
 ② Booking Service:
-   - GET idempotency:{key} from Redis → not found, proceed
-   - GET event:{eventId} from Redis → validate event is active + sale is open
+   - GET idempotency:{key} from Redis -> not found, proceed
+   - GET event:{eventId} from Redis -> validate event is active + sale is open
    - BEGIN TRANSACTION
        INSERT INTO bookings (status='pending', seat_id=NULL, amount=event.price)
        INSERT INTO outbox_events (topic='seat.reserve_requested',
@@ -547,18 +538,18 @@ if (!set) {
 ③ Outbox poller (runs inside Booking Service every ~200ms):
    SELECT FROM outbox_events WHERE published = FALSE
    FOR UPDATE SKIP LOCKED LIMIT 100
-   → Publishes seat.reserve_requested to Kafka
-   → UPDATE outbox_events SET published = TRUE
+   -> Publishes seat.reserve_requested to Kafka
+   -> UPDATE outbox_events SET published = TRUE
 
 ④ Inventory Service consumes seat.reserve_requested:
-   - SELECT message_id FROM processed_events WHERE message_id = ? → not found
+   - SELECT message_id FROM processed_events WHERE message_id = ? -> not found
    - BEGIN TRANSACTION
        SELECT id, seat_number FROM seats
        WHERE event_id = $eventId AND status = 'available'
        ORDER BY seat_number
        LIMIT 1
        FOR UPDATE SKIP LOCKED
-       → Row returned: seat_id = "uuid-of-seat-42", seat_number = "Seat 42"
+       -> Row returned: seat_id = "uuid-of-seat-42", seat_number = "Seat 42"
 
        UPDATE seats SET status = 'held', held_by = $bookingId
        WHERE id = $seatId
@@ -569,37 +560,37 @@ if (!set) {
    - Publish seat.reserved { bookingId, seatId, seatNumber: "Seat 42" }
 
 ⑤ Booking Service consumes seat.reserved:
-   - SELECT message_id FROM processed_events → not found
+   - SELECT message_id FROM processed_events -> not found
    - BEGIN TRANSACTION
        UPDATE bookings SET status = 'confirmed', seat_id = $seatId
        INSERT INTO processed_events (message_id, topic)
      COMMIT
 
-⑥ User polls → GET /bookings/{bookingId}
+⑥ User polls -> GET /bookings/{bookingId}
    Response: { status: 'confirmed', seat: 'Seat 42' }
 ```
 
 ---
 
-### 10.2 Failed booking — no seats available
+### 10.2 Failed booking - no seats available
 
 ```
-Steps ①–③ identical.
+Steps ①-③ identical.
 
 ④ Inventory Service consumes seat.reserve_requested:
-   - SELECT FROM processed_events → not found
+   - SELECT FROM processed_events -> not found
    - BEGIN TRANSACTION
        SELECT id FROM seats
        WHERE event_id = $eventId AND status = 'available'
        LIMIT 1 FOR UPDATE SKIP LOCKED
-       → 0 rows returned (all seats held or booked)
+       -> 0 rows returned (all seats held or booked)
      COMMIT (nothing to update)
    - Publish seat.failed { bookingId, reason: 'no_seats_available' }
 
 ⑤ Booking Service consumes seat.failed:
    - UPDATE bookings SET status = 'failed'
 
-⑥ User polls → GET /bookings/{bookingId}
+⑥ User polls -> GET /bookings/{bookingId}
    Response: { status: 'failed', reason: 'no_seats_available' }
 ```
 
@@ -607,10 +598,10 @@ In a 1000-user flash sale for 100 seats: the first 100 concurrent transactions e
 
 ---
 
-### 10.3 Event creation — seeding seats in Inventory
+### 10.3 Event creation - seeding seats in Inventory
 
 ```
-① Admin → POST /events { title, totalSeats: 200, price: 50000, saleStartsAt, ... }
+① Admin -> POST /events { title, totalSeats: 200, price: 50000, saleStartsAt, ... }
 
 ② Event Service:
    BEGIN TRANSACTION
@@ -623,7 +614,7 @@ In a 1000-user flash sale for 100 seats: the first 100 concurrent transactions e
 ③ Outbox poller publishes event.created to Kafka.
 
 ④ Inventory Service consumes event.created:
-   - Check processed_events → not found
+   - Check processed_events -> not found
    - Bulk insert 200 seat rows:
      INSERT INTO seats (event_id, seat_number, status)
      SELECT $eventId, 'Seat ' || gs, 'available'
@@ -632,12 +623,12 @@ In a 1000-user flash sale for 100 seats: the first 100 concurrent transactions e
    - INSERT INTO processed_events
 
 ⑤ Booking Service consumes event.created:
-   - Check processed_events → not found
+   - Check processed_events -> not found
    - SET event:{eventId} = { title, price, saleStartsAt, status } EX 3600
    - INSERT INTO processed_events
 
 After step ⑤: Booking Service can validate any booking for this event
-using the Redis cache — zero calls to Event Service at runtime.
+using the Redis cache - zero calls to Event Service at runtime.
 ```
 
 ---
@@ -646,7 +637,7 @@ using the Redis cache — zero calls to Event Service at runtime.
 
 ### 11.1 Outbox pattern
 
-**Problem:** Writing to Postgres and publishing to Kafka are two operations. A crash between them leaves the system in a corrupt state — a booking exists with no Kafka event, or vice versa.
+**Problem:** Writing to Postgres and publishing to Kafka are two operations. A crash between them leaves the system in a corrupt state - a booking exists with no Kafka event, or vice versa.
 
 **Solution:** Write the Kafka payload to an `outbox_events` table inside the same DB transaction as the booking. A poller process publishes the rows and marks them done.
 
@@ -672,7 +663,7 @@ await db.transaction(async (tx) => {
 });
 ```
 
-**Poller — why `SKIP LOCKED` matters here too:**
+**Poller - why `SKIP LOCKED` matters here too:**
 
 ```sql
 SELECT * FROM outbox_events
@@ -691,17 +682,17 @@ Without `SKIP LOCKED`, two Booking Service replicas would queue up on the same r
 No central orchestrator. Services react to each other's Kafka events.
 
 ```
-Booking ──► seat.reserve_requested ──► Inventory
-                                            │
-                               ┌────────────┴───────────────┐
-                               ▼                            ▼
-                          seat.reserved               seat.failed
-                               │                            │
-                               ▼                            ▼
-                     Booking → confirmed           Booking → failed
+Booking -> seat.reserve_requested -> Inventory
+                                        |
+                           +-----------+----------+
+                           v                      v
+                      seat.reserved           seat.failed
+                           |                      |
+                           v                      v
+                 Booking -> confirmed   Booking -> failed
 ```
 
-The saga is complete when Booking reaches a terminal state. If it reaches `failed`, Inventory never committed a seat change — no rollback needed.
+The saga is complete when Booking reaches a terminal state. If it reaches `failed`, Inventory never committed a seat change - no rollback needed.
 
 ---
 
@@ -718,7 +709,7 @@ if (existing) {
   });
   return reply.status(200).send(booking);
 }
-// Not seen — process and cache result
+// Not seen - process and cache result
 ```
 
 ---
@@ -734,7 +725,7 @@ async function handleSeatReserveRequested(msg: SeatReserveRequestedEvent) {
   const seen = await db.query.processed_events.findFirst({
     where: eq(processed_events.message_id, msg.messageId),
   });
-  if (seen) return; // already handled — ack and skip
+  if (seen) return; // already handled - ack and skip
 
   await db.transaction(async (tx) => {
     // ... assign seat, update status ...
@@ -748,23 +739,23 @@ async function handleSeatReserveRequested(msg: SeatReserveRequestedEvent) {
 }
 ```
 
-The insert into `processed_events` is inside the same transaction as the business logic. If the transaction rolls back, the record is also rolled back — the message will be retried correctly next time.
+The insert into `processed_events` is inside the same transaction as the business logic. If the transaction rolls back, the record is also rolled back - the message will be retried correctly next time.
 
 ---
 
-## 12. API Reference
+### API Reference
 
-### Auth endpoints
+#### Auth endpoints
 
 ```
 POST  /auth/register    Register new user
-POST  /auth/login       Login — returns access token + refresh token
+POST  /auth/login       Login - returns access token + refresh token
 POST  /auth/logout      Revoke current session
 POST  /auth/refresh     Exchange refresh token for new access token
 GET   /auth/me          Get current user profile
 ```
 
-### Event endpoints
+#### Event endpoints
 
 ```
 GET   /events           List all active events
@@ -774,10 +765,10 @@ PUT   /events/:id       [admin] Update event
 DELETE /events/:id      [admin] Cancel event
 ```
 
-### Booking endpoints
+#### Booking endpoints
 
 ```
-POST  /bookings         Create a booking — returns 202 + bookingId
+POST  /bookings         Create a booking - returns 202 + bookingId
                         Body: { eventId }
                         Header: Idempotency-Key: <uuid>
 
@@ -785,22 +776,18 @@ GET   /bookings/:id     Get booking status + assigned seat
 GET   /bookings/me      Get current user's bookings
 ```
 
----
-
-## 13. Infrastructure
-
 ### Local development
 
 ```bash
 # Start all infrastructure
 docker-compose up -d
-# Starts: Kafka, Postgres x4, Redis, Prometheus, Grafana, Kafka UI
+# Starts: Kafka, Postgres x4, Redis, Kafka UI
 
 # Start all services in watch mode
 pnpm run dev --filter=*
 ```
 
-### Kubernetes — local (Kind)
+### Kubernetes - local (Kind)
 
 ```bash
 kind create cluster --config infra/k8s/kind-config.yaml
@@ -815,56 +802,34 @@ Each service runs as a `Deployment` with:
 - `Secret` for DB password, JWT secret, Redis URL
 - `HorizontalPodAutoscaler` on CPU (target 70%)
 
-**Scaling note:** Scale Inventory Service carefully. More replicas = more concurrent Kafka consumers = more parallel seat locking. This is intentional and correct — but watch DB connection pool usage.
+Scaling note: Scale Inventory Service carefully. More replicas = more concurrent Kafka consumers = more parallel seat locking. This is intentional and correct. Monitor DB connection pool usage.
 
-### CI/CD — GitHub Actions
+### CI/CD - GitHub Actions
 
 ```
 On Pull Request:
   1. TypeScript check (tsc --noEmit)
   2. Lint (ESLint)
   3. Unit tests (Vitest)
-  4. Integration tests (Testcontainers — real Kafka + Postgres)
+  4. Integration tests (Testcontainers - real Kafka + Postgres)
   5. Docker build
 
 On merge to main:
   1. All PR checks
   2. Docker build + tag with commit SHA
-  3. Smoke test — full booking flow end to end
+  3. Smoke test - full booking flow end to end
 ```
 
 ---
 
 ## 14. Observability
 
-### Metrics (Prometheus)
-
-Each service exposes `GET /metrics` in Prometheus format.
-
-| Metric                             | Type      | Service   | Alert threshold      |
-| ---------------------------------- | --------- | --------- | -------------------- |
-| `bookings_created_total`           | Counter   | Booking   | —                    |
-| `bookings_by_status_total{status}` | Counter   | Booking   | —                    |
-| `saga_duration_seconds`            | Histogram | Booking   | p99 > 5s             |
-| `inventory_lock_attempts_total`    | Counter   | Inventory | —                    |
-| `inventory_lock_failures_total`    | Counter   | Inventory | rate > 50/min        |
-| `kafka_consumer_lag{topic,group}`  | Gauge     | All       | > 1000 messages      |
-| `outbox_unpublished_total`         | Gauge     | Booking   | > 500 (poller stuck) |
-| `db_query_duration_seconds`        | Histogram | All       | p99 > 200ms          |
-| `http_request_duration_seconds`    | Histogram | All       | p99 > 1s             |
-
-**Grafana dashboards:**
-
-1. Booking overview — rate, success %, saga duration p50/p95/p99
-2. Inventory health — lock attempts, failures, available seat count
-3. Kafka health — consumer lag per topic, outbox backlog
-
 ### Structured logs (Pino)
 
 ```json
 {
   "level": "info",
-  "time": "2026-04-13T10:00:00.000Z",
+  "time": "2026-05-09T10:00:00.000Z",
   "service": "booking-service",
   "bookingId": "uuid",
   "userId": "uuid",
@@ -873,7 +838,25 @@ Each service exposes `GET /metrics` in Prometheus format.
 }
 ```
 
-All logs shipped to Loki. Filter by `bookingId` to trace a full saga across services.
+All logs are structured JSON for easy parsing and filtering by bookingId to trace full saga across services.
+
+### Health checks
+
+Each service exposes `GET /health` with pool stats:
+
+```json
+{
+  "status": "ok",
+  "service": "booking-service",
+  "db": {
+    "total": 20,
+    "active": 15,
+    "waiting": 0
+  }
+}
+```
+
+Returns 503 if DB connection pool is degraded (waiting > 0 AND active/total > 90%).
 
 ---
 
@@ -881,20 +864,20 @@ All logs shipped to Loki. Filter by `bookingId` to trace a full saga across serv
 
 Tool: k6
 
-### Scenario 1 — seat race (correctness)
+### Scenario 1 - seat race (correctness)
 
 ```
-500 virtual users → all book the same eventId simultaneously
+500 virtual users -> all book the same eventId simultaneously
 Event has 1 seat remaining
 
 Pass: exactly 1 confirmed, exactly 499 failed
 Fail: any run produces 2+ confirmed bookings for the same event seat
 ```
 
-### Scenario 2 — flash sale (concurrency + throughput)
+### Scenario 2 - flash sale (concurrency + throughput)
 
 ```
-1000 virtual users → all book the same eventId simultaneously
+1000 virtual users -> all book the same eventId simultaneously
 Event has 100 seats
 
 Pass:
@@ -905,7 +888,7 @@ Pass:
   - Kafka consumer lag returns to 0 within 60s of peak
 ```
 
-### Scenario 3 — sustained load (stability)
+### Scenario 3 - sustained load (stability)
 
 ```
 200 virtual users booking across multiple events for 10 minutes
@@ -921,7 +904,7 @@ Pass:
 
 ## 16. Architecture Decision Records
 
-### ADR-001 — Saga choreography over orchestration
+### ADR-001 - Saga choreography over orchestration
 
 **Decision:** Services emit and consume Kafka events directly. No central orchestrator.
 
@@ -931,27 +914,27 @@ Pass:
 
 ---
 
-### ADR-002 — Outbox pattern for Kafka publishing
+### ADR-002 - Outbox pattern for Kafka publishing
 
 **Decision:** The Kafka event is written to an `outbox_events` table in the same DB transaction as the business record. A poller publishes it to Kafka.
 
-**Why:** Eliminates the dual-write problem. The DB transaction is atomic — either both the booking and the outbox row are written, or neither is.
+**Why:** Eliminates the dual-write problem. The DB transaction is atomic - either both the booking and the outbox row are written, or neither is.
 
 **Tradeoff:** Small latency added by the poller interval (~200ms). Outbox table needs periodic cleanup of old published rows.
 
 ---
 
-### ADR-003 — `FOR UPDATE SKIP LOCKED` for seat assignment (Model A)
+### ADR-003 - `FOR UPDATE SKIP LOCKED` for seat assignment (Model A)
 
 **Decision:** Inventory uses `SELECT ... FOR UPDATE SKIP LOCKED` to pick any available seat, skipping rows currently locked by other transactions.
 
 **Why:** Under flash sale concurrency, `SKIP LOCKED` distributes requests across all available seats instead of creating contention on a single row. Fails immediately when no seats remain.
 
-**Tradeoff:** Seat assignment is arbitrary — users get whatever seat is available, not a specific one. This is intentional in Model A.
+**Tradeoff:** Seat assignment is arbitrary - users get whatever seat is available, not a specific one. This is intentional in Model A.
 
 ---
 
-### ADR-004 — Separate database per service
+### ADR-004 - Separate database per service
 
 **Decision:** Each service owns its own Postgres database.
 
@@ -961,7 +944,7 @@ Pass:
 
 ---
 
-### ADR-005 — Model A seat assignment
+### ADR-005 - Model A seat assignment
 
 **Decision:** The system assigns seats. Users request `{ eventId }` only. Inventory picks the seat.
 
@@ -973,22 +956,22 @@ Pass:
 
 ## 17. Future Phases
 
-### Phase 2 — Payment + API Gateway
+### Phase 2 - Payment + API Gateway
 
 - API Gateway: JWT verification at edge, rate limiting, routing
 - Payment Service: Razorpay mock integration
 - New Kafka topics: `booking.confirmed`, `payment.completed`, `payment.failed`
-- Compensation flow: `payment.failed` → release seat in Inventory
+- Compensation flow: `payment.failed` - release seat in Inventory
 - 2-minute seat hold with expiry cleanup job
 
-### Phase 3 — Resilience + Observability
+### Phase 3 - Resilience + Observability
 
 - Distributed tracing (OpenTelemetry + Jaeger)
 - Dead Letter Queue for poison pill Kafka messages
 - Retry with exponential backoff for transient DB/Redis failures
 - Notification Service (email/SMS on booking confirmation)
 
-### Phase 4 — AWS Deployment
+### Phase 4 - AWS Deployment
 
 - Terraform: EKS, RDS per service, Amazon MSK, ElastiCache
 - GitHub Actions CD pipeline to EKS
@@ -998,5 +981,4 @@ Pass:
 
 ---
 
-_This document is the source of truth for V1 design decisions.  
-Add an ADR before implementing any significant new decision — not after._
+_This document is the source of truth for V1 design decisions ._
