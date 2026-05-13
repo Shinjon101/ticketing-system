@@ -14,10 +14,11 @@ lerna-debug.log*
 private.pem
 public.pem
 
-
+*.pem
 
 
 .env
+.env.*
 .env.local
 .env.*.local
 
