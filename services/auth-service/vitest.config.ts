@@ -6,7 +6,7 @@ export default defineConfig({
     name: "auth-service",
     environment: "node",
     globals: true,
-
+    clearMocks: true,
     env: {
       NODE_ENV: "test",
       LOG_LEVEL: "error",
