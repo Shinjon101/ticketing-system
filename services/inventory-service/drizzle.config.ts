@@ -1,6 +1,6 @@
 import { defineConfig } from "drizzle-kit";
 import "dotenv/config";
-import { env } from "../event-service/src/config/env";
+import { env } from "./src/config/env";
 
 export default defineConfig({
   dialect: "postgresql",
