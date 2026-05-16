@@ -11,7 +11,7 @@ if (!connectionString) {
 const pool = new Pool({ connectionString });
 const db = drizzle({ client: pool });
 
-console.log("Running event-service migrations...");
+console.log("Running booking-service migrations...");
 await migrate(db, { migrationsFolder: "./src/db/migrations" });
 console.log("Migrations complete");
 
