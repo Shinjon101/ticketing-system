@@ -2,6 +2,14 @@ import { verifyAccessToken } from "@/auth/token.service";
 import { HttpError } from "@ticketing/common";
 import { NextFunction, Request, Response } from "express";
 
+declare global {
+  namespace Express {
+    interface Request {
+      user: ReturnType<typeof verifyAccessToken>;
+    }
+  }
+}
+
 export const autheticate = (
   req: Request,
   _res: Response,
