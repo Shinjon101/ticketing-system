@@ -1,0 +1,26 @@
+# Dependencies
+**/node_modules
+
+# Build output
+**/dist
+
+# Environment files
+**/.env
+**/.env.*
+**/.env.local
+
+# Test artifacts
+**/coverage
+
+# Logs
+**/*.log
+
+# Git
+.git
+.gitignore
+
+# OS
+.DS_Store
+
+# Local dev files
+**/*.pem

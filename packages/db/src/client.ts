@@ -101,30 +101,21 @@ export function createDb<TSchema extends Record<string, unknown>>(
   const pool = new Pool(poolOptions);
 
   pool.on("connect", (client) => {
-    logger?.debug(
-      { serviceName, processId: client.processID },
-      "New DB connection established",
-    );
+    logger?.debug({ serviceName }, "New DB connection established");
   });
 
   pool.on("acquire", (client) => {
-    logger?.debug(
-      { serviceName, processId: client.processID },
-      "DB connection acquired from pool",
-    );
+    logger?.debug({ serviceName }, "DB connection acquired from pool");
   });
 
   pool.on("remove", (client) => {
-    logger?.debug(
-      { serviceName, processId: client.processID },
-      "DB connection removed from pool",
-    );
+    logger?.debug({ serviceName }, "DB connection removed from pool");
   });
 
   pool.on("error", (err, client) => {
     logger?.error(
-      { err, serviceName, processId: client.processID },
-      "Unexpected DB pool error : connection will be replaced",
+      { err, serviceName },
+      "Unexpected DB pool error: connection will be replaced",
     );
   });
 
