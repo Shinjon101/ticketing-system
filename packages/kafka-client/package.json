@@ -7,7 +7,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc --project tsconfig.json"
+    "build": "node --import tsx/esm build.ts && tsc --emitDeclarationOnly"
   },
   "keywords": [],
   "author": "",
