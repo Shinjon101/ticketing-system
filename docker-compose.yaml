@@ -26,17 +26,17 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: event_db
     ports:
-     - "${EVENT_DB_PORT:-5433}:5432"
+      - "${EVENT_DB_PORT:-5433}:5432"
     volumes:
-     - event-db-data:/var/lib/postgresql/data
+      - event-db-data:/var/lib/postgresql/data
     networks:
-     - ticket-system-network
+      - ticket-system-network
     healthcheck:
-     test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
-     interval: 5s
-     timeout: 5s
-     retries: 5
-  
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   booking_db:
     image: postgres:16-alpine
     container_name: booking-db
@@ -73,7 +73,7 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
-      retries: 5    
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -89,7 +89,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-  
 
   kafka:
     image: apache/kafka:latest
@@ -117,10 +116,11 @@ services:
       - ticket-system-network
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-metadata-quorum.sh --bootstrap-server localhost:9092 describe --status"]
-      interval: 10s     
+      interval: 10s
       timeout: 10s
       retries: 5
       start_period: 15s
+
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
@@ -134,6 +134,106 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
+    container_name: auth-service
+    ports:
+      - "${AUTH_SERVICE_PORT:-4003}:4003"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4003
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@auth-db:5432/${POSTGRES_DB:-auth_db}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      auth_db:
+        condition: service_healthy
+    networks:
+      - ticket-system-network
+    restart: unless-stopped
+
+  event-service:
+    build:
+      context: .
+      dockerfile: services/event-service/Dockerfile
+    container_name: event-service
+    ports:
+      - "${EVENT_SERVICE_PORT:-4004}:4004"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4004
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@event-db:5432/event_db
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      event_db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ticket-system-network
+    restart: unless-stopped
+
+  booking-service:
+    build:
+      context: .
+      dockerfile: services/booking-service/Dockerfile
+    container_name: booking-service
+    ports:
+      - "${BOOKING_SERVICE_PORT:-4005}:4005"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4005
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@booking-db:5432/booking_db
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      booking_db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ticket-system-network
+    restart: unless-stopped
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: services/inventory-service/Dockerfile
+    container_name: inventory-service
+    ports:
+      - "${INVENTORY_SERVICE_PORT:-4006}:4006"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4006
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@inventory-db:5432/inventory_db
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://redis:6379
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      inventory_db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ticket-system-network
+    restart: unless-stopped
 
 volumes:
   auth-db-data:
