@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        run: corepack enable && corepack prepare pnpm@10.30.2 --activate
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: |
+          pnpm --filter @ticketing/common typecheck
+          pnpm --filter @ticketing/db typecheck
+          pnpm --filter @ticketing/kafka-client typecheck
+          pnpm --filter @ticketing/auth-service typecheck
+          pnpm --filter @ticketing/event-service typecheck
+          pnpm --filter @ticketing/booking-service typecheck
+          pnpm --filter @ticketing/inventory-service typecheck
+
+      - name: Run tests
+        run: pnpm --filter @ticketing/auth-service test
+        env:
+          NODE_ENV: test
+          JWT_PRIVATE_KEY: ${{ secrets.JWT_PRIVATE_KEY }}
+          JWT_PUBLIC_KEY: ${{ secrets.JWT_PUBLIC_KEY }}
+          #Auth tests uses a mocked database.
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build auth-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/auth-service/Dockerfile
+          push: false
+          cache-from: type=gha,scope=auth-service
+          cache-to: type=gha,mode=max,scope=auth-service
+
+      - name: Build event-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/event-service/Dockerfile
+          push: false
+          cache-from: type=gha,scope=event-service
+          cache-to: type=gha,mode=max,scope=event-service
+
+      - name: Build booking-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/booking-service/Dockerfile
+          push: false
+          cache-from: type=gha,scope=booking-service
+          cache-to: type=gha,mode=max,scope=booking-service
+
+      - name: Build inventory-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/inventory-service/Dockerfile
+          push: false
+          cache-from: type=gha,scope=inventory-service
+          cache-to: type=gha,mode=max,scope=inventory-service
