@@ -32,6 +32,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build shared packages
+        run: |
+          pnpm --filter @ticketing/common build
+          pnpm --filter @ticketing/db build
+          pnpm --filter @ticketing/kafka-client build
+
       - name: Typecheck
         run: |
           pnpm --filter @ticketing/common typecheck
