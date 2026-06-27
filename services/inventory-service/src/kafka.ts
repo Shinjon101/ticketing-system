@@ -3,6 +3,7 @@ import {
   createProducer,
   EventCreated,
   KafkaProducer,
+  SeatRelease,
   SeatReserveRequested,
   TOPICS,
 } from "@ticketing/kafka-client";
@@ -10,13 +11,12 @@ import { env } from "./config/env";
 import { logger } from "./config/logger";
 import { seatService } from "./seats/seat.service";
 
-export const createKafkaProducer = (): KafkaProducer => {
-  return createProducer({
+export const createKafkaProducer = (): KafkaProducer =>
+  createProducer({
     brokers: env.KAFKA_BROKERS.split(","),
     clientId: "inventory-service",
     logger,
   });
-};
 
 export const startKafkaConsumer = async (
   producer: KafkaProducer,
@@ -34,7 +34,11 @@ export const startKafkaConsumer = async (
     },
 
     [TOPICS.SEAT_RESERVE_REQUESTED]: async (msg: SeatReserveRequested) => {
-      await seatService.assignSeat(msg, producer);
+      await seatService.assignSeats(msg, producer);
+    },
+
+    [TOPICS.SEAT_RELEASE]: async (msg: SeatRelease) => {
+      await seatService.releaseSeats(msg);
     },
   });
 

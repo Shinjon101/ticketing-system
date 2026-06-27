@@ -6,6 +6,8 @@ import {
   KafkaProducer,
   SeatFailed,
   SeatReserved,
+  PaymentCompleted,
+  PaymentFailed,
   TOPICS,
 } from "@ticketing/kafka-client";
 import { env } from "./config/env";
@@ -20,12 +22,6 @@ export const createKafkaProducer = (): KafkaProducer => {
     logger,
   });
 };
-
-/* Booking service consumes 4 topics:
-event.created    → cache event metadata in Redis
-event.updated    → invalidate event cache
-seat.reserved    → confirm the booking
-seat.failed      → fail the booking */
 
 export const startKafkaConsumer = async (): Promise<() => Promise<void>> => {
   const consumer = createConsumer({
@@ -44,55 +40,44 @@ export const startKafkaConsumer = async (): Promise<() => Promise<void>> => {
     [TOPICS.EVENT_UPDATED]: async (msg: EventUpdated) => {
       if (msg.changes.status === "cancelled") {
         await eventCache.del(msg.eventId);
-        logger.info(
-          { eventId: msg.eventId },
-          "Event cache invalidated (cancelled)",
-        );
       } else {
-        // Get existing event from cache
         const cachedEvent = await eventCache.get(msg.eventId);
         if (cachedEvent) {
-          // Merge changes with existing event data
-          const updatedEvent: EventCreated = {
+          await eventCache.set({
+            ...cachedEvent,
             messageId: msg.messageId,
-            eventId: msg.eventId,
             title: msg.changes.title ?? cachedEvent.title,
             price: msg.changes.price ?? cachedEvent.price,
             totalSeats: msg.changes.totalSeats ?? cachedEvent.totalSeats,
             status: (msg.changes.status ?? cachedEvent.status) as
               | "active"
               | "draft",
-            eventDate: cachedEvent.eventDate,
-            saleStartsAt: cachedEvent.saleStartsAt,
-          };
-          // Re-cache the updated event
-          await eventCache.set(updatedEvent);
-          logger.info(
-            { eventId: msg.eventId, changes: msg.changes },
-            "Event cache updated",
-          );
-        } else {
-          logger.warn(
-            { eventId: msg.eventId },
-            "Event not found in cache during update",
-          );
+          });
         }
       }
     },
 
     [TOPICS.SEAT_RESERVED]: async (msg: SeatReserved) => {
       await bookingService.onSeatReserved(msg);
-      logger.info(
-        { bookingId: msg.bookingId, seatId: msg.seatId, seat: msg.seatNumber },
-        "Booking confirmed",
-      );
     },
 
     [TOPICS.SEAT_FAILED]: async (msg: SeatFailed) => {
       await bookingService.onSeatFailed(msg);
+    },
+
+    [TOPICS.PAYMENT_COMPLETED]: async (msg: PaymentCompleted) => {
+      await bookingService.onPaymentCompleted(msg);
+      logger.info(
+        { bookingId: msg.bookingId },
+        "Booking confirmed via payment",
+      );
+    },
+
+    [TOPICS.PAYMENT_FAILED]: async (msg: PaymentFailed) => {
+      await bookingService.onPaymentFailed(msg);
       logger.info(
         { bookingId: msg.bookingId, reason: msg.reason },
-        "Booking failed",
+        "Booking failed, seat release queued",
       );
     },
   });
