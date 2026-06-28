@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { z, createEnv } from "@ticketing/common";
 
 const envSchema = z.object({
@@ -8,13 +9,13 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url().min(1, "DATABASE_URL is required"),
   JWT_PUBLIC_KEY: z.string().min(1, "JWT_PUBLIC_KEY is required"),
   KAFKA_BROKERS: z.string().min(1, "KAFKA_BROKERS is required"),
-
+  /* 
   RAZORPAY_KEY_ID: z.string().min(1, "RAZORPAY_KEY_ID is required"),
   RAZORPAY_KEY_SECRET: z.string().min(1, "RAZORPAY_KEY_SECRET is required"),
 
   RAZORPAY_WEBHOOK_SECRET: z
     .string()
-    .min(1, "RAZORPAY_WEBHOOK_SECRET is required"),
+    .min(1, "RAZORPAY_WEBHOOK_SECRET is required"), */
 
   LOG_LEVEL: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal"])
