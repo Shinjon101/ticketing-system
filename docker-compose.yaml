@@ -259,6 +259,10 @@ services:
       context: .
       dockerfile: services/payment-service/Dockerfile
     container_name: payment-service
+
+    env_file:                              
+      - ./services/payment-service/.env
+
     ports:
       - "${PAYMENT_SERVICE_PORT:-4007}:4007"
     environment:
@@ -267,9 +271,6 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@payment-db:5432/payment_db
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
       KAFKA_BROKERS: kafka:9092
-      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
-      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
-      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       payment_db:
