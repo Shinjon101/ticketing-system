@@ -30,6 +30,7 @@ export const createHandler: RequestHandler = asyncHandler(
       userId: req.user.sub,
       eventId: input.eventId,
       idempotencyKey,
+      quantity: input.quantity,
     });
 
     res.status(202).json({ booking });
