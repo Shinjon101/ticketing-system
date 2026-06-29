@@ -1,7 +1,16 @@
-import { integer, pgEnum, pgTable, text, timestamp } from "@ticketing/db";
+import {
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+} from "@ticketing/db";
 
 export const bookingStatusEnum = pgEnum("booking_status", [
   "pending",
+  "seat_held",
+  "payment_initiated",
   "confirmed",
   "failed",
   "cancelled",
@@ -16,11 +25,12 @@ export const bookings = pgTable("bookings", {
 
   eventId: text("event_id").notNull(),
 
-  seatId: text("seat_id"),
+  quantity: integer("quantity").notNull().default(1),
+
+  seatIds: jsonb("seat_ids").$type<string[]>(),
+  seatNumbers: jsonb("seat_numbers").$type<string[]>(),
 
   status: bookingStatusEnum("status").notNull().default("pending"),
-
-  seatNumber: text("seat_number"),
 
   amount: integer("amount").notNull(),
 

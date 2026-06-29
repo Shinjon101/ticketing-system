@@ -235,11 +235,59 @@ services:
       - ticket-system-network
     restart: unless-stopped
 
+  payment_db:
+    image: postgres:16-alpine
+    container_name: payment-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: payment_db
+    ports:
+      - "${PAYMENT_DB_PORT:-5436}:5432"
+    volumes:
+      - payment-db-data:/var/lib/postgresql/data
+    networks:
+      - ticket-system-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: services/payment-service/Dockerfile
+    container_name: payment-service
+
+    env_file:                              
+      - ./services/payment-service/.env
+
+    ports:
+      - "${PAYMENT_SERVICE_PORT:-4007}:4007"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4007
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@payment-db:5432/payment_db
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      KAFKA_BROKERS: kafka:9092
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      payment_db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - ticket-system-network
+    restart: unless-stopped
+
+
 volumes:
   auth-db-data:
   event-db-data:
   booking-db-data:
   inventory-db-data:
+  payment-db-data:
   kafka-data:
   redis-data:
 

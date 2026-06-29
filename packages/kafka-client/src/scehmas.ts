@@ -27,14 +27,15 @@ export const SeatReserveRequestedSchema = z.object({
   bookingId: z.uuid(),
   userId: z.uuid(),
   eventId: z.uuid(),
+  quantity: z.number().int().positive(),
   requestedAt: z.iso.datetime(),
 });
 
 export const SeatReservedSchema = z.object({
   messageId: z.uuid(),
   bookingId: z.uuid(),
-  seatId: z.uuid(),
-  seatNumber: z.string(),
+  seatIds: z.array(z.string()),
+  seatNumbers: z.array(z.string()),
   reservedAt: z.iso.datetime(),
 });
 
@@ -44,11 +45,54 @@ export const SeatFailedSchema = z.object({
   reason: z.enum(["no_seats_available", "event_not_found"]),
 });
 
+export const SeatReleaseSchema = z.object({
+  messageId: z.uuid(),
+  bookingId: z.uuid(),
+  eventId: z.uuid(),
+  seatIds: z.array(z.string()),
+});
+
+export const BookingSeatHeldSchema = z.object({
+  messageId: z.uuid(),
+  bookingId: z.uuid(),
+  userId: z.uuid(),
+  eventId: z.uuid(),
+  seatIds: z.array(z.string()),
+  seatNumbers: z.array(z.string()),
+  amount: z.number().int().positive(), // total in paise
+  expiresAt: z.iso.datetime(),
+});
+
+export const PaymentCompletedSchema = z.object({
+  messageId: z.uuid(),
+  bookingId: z.uuid(),
+  razorpayPaymentId: z.string(),
+  razorpayOrderId: z.string(),
+  amount: z.number().int().positive(),
+  paidAt: z.iso.datetime(),
+});
+
+export const PaymentFailedSchema = z.object({
+  messageId: z.uuid(),
+  bookingId: z.uuid(),
+  reason: z.enum([
+    "payment_declined",
+    "payment_cancelled",
+    "hold_expired",
+    "signature_mismatch",
+  ]),
+  failedAt: z.iso.datetime(),
+});
+
 export type EventCreated = z.infer<typeof EventCreatedSchema>;
 export type EventUpdated = z.infer<typeof EventUpdatedSchema>;
 export type SeatReserveRequested = z.infer<typeof SeatReserveRequestedSchema>;
 export type SeatReserved = z.infer<typeof SeatReservedSchema>;
 export type SeatFailed = z.infer<typeof SeatFailedSchema>;
+export type SeatRelease = z.infer<typeof SeatReleaseSchema>;
+export type BookingSeatHeld = z.infer<typeof BookingSeatHeldSchema>;
+export type PaymentCompleted = z.infer<typeof PaymentCompletedSchema>;
+export type PaymentFailed = z.infer<typeof PaymentFailedSchema>;
 
 import { TOPICS } from "./topics";
 
@@ -58,4 +102,8 @@ export const TOPIC_SCHEMAS = {
   [TOPICS.SEAT_RESERVE_REQUESTED]: SeatReserveRequestedSchema,
   [TOPICS.SEAT_RESERVED]: SeatReservedSchema,
   [TOPICS.SEAT_FAILED]: SeatFailedSchema,
+  [TOPICS.SEAT_RELEASE]: SeatReleaseSchema,
+  [TOPICS.BOOKING_SEAT_HELD]: BookingSeatHeldSchema,
+  [TOPICS.PAYMENT_COMPLETED]: PaymentCompletedSchema,
+  [TOPICS.PAYMENT_FAILED]: PaymentFailedSchema,
 } as const;

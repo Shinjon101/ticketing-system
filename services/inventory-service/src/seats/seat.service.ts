@@ -1,6 +1,7 @@
 import {
   EventCreated,
   KafkaProducer,
+  SeatRelease,
   SeatReserveRequested,
   TOPICS,
 } from "@ticketing/kafka-client";
@@ -12,12 +13,10 @@ import { seatsCounter } from "@/redis/seat-counter";
 export const seatService = {
   seedSeats: async (msg: EventCreated): Promise<void> => {
     const { messageId, eventId, totalSeats } = msg;
-
     if (await seatRepository.isProcessed(messageId)) {
       logger.warn({ messageId, eventId }, "event.created already processed");
       return;
     }
-
     await db.transaction(async (tx) => {
       await seatRepository.seedSeatsWithTx(
         tx as typeof db,
@@ -30,37 +29,35 @@ export const seatService = {
         TOPICS.EVENT_CREATED,
       );
     });
-
     await seatsCounter.seed(eventId, totalSeats);
-
     logger.info({ eventId, totalSeats }, "Seats seeded");
   },
 
-  assignSeat: async (
+  assignSeats: async (
     msg: SeatReserveRequested,
     producer: KafkaProducer,
   ): Promise<void> => {
-    const { messageId, bookingId, eventId } = msg;
+    const { messageId, bookingId, eventId, quantity } = msg;
 
     if (await seatRepository.isProcessed(messageId)) {
       logger.debug(
         { messageId, bookingId },
-        "seat.reserve_requested already processed — skipping",
+        "seat.reserve_requested already processed",
       );
       return;
     }
 
-    let assignedSeat: Awaited<
-      ReturnType<typeof seatRepository.pickAndLockSeat>
-    >;
+    let assignedSeats: Awaited<
+      ReturnType<typeof seatRepository.pickAndLockSeats>
+    > = [];
 
     await db.transaction(async (tx) => {
-      assignedSeat = await seatRepository.pickAndLockSeat(
+      assignedSeats = await seatRepository.pickAndLockSeats(
         tx as typeof db,
         eventId,
         bookingId,
+        quantity,
       );
-
       await seatRepository.markProcessedWithTx(
         tx as typeof db,
         messageId,
@@ -68,46 +65,76 @@ export const seatService = {
       );
     });
 
-    if (!assignedSeat) {
+    if (assignedSeats.length < quantity) {
       await producer.publish(
         TOPICS.SEAT_FAILED,
         {
           messageId: crypto.randomUUID(),
           bookingId,
-          reason: "no_seats_available",
+          reason: quantity > 1 ? "insufficient_seats" : "no_seats_available",
         },
         bookingId,
       );
-
       logger.info(
-        { bookingId, eventId },
-        "No seats available — seat.failed emitted",
+        { bookingId, eventId, requested: quantity },
+        "Insufficient seats — seat.failed emitted",
       );
       return;
     }
 
-    await seatsCounter.decrement(eventId);
+    // Decrement Redis counter by the number of seats held
+    for (let i = 0; i < quantity; i++) {
+      await seatsCounter.decrement(eventId);
+    }
 
     await producer.publish(
       TOPICS.SEAT_RESERVED,
       {
         messageId: crypto.randomUUID(),
         bookingId,
-        seatId: assignedSeat.id,
-        seatNumber: assignedSeat.seatNumber,
+        seatIds: assignedSeats.map((s) => s.id),
+        seatNumbers: assignedSeats.map((s) => s.seatNumber),
         reservedAt: new Date().toISOString(),
       },
       bookingId,
     );
 
     logger.info(
-      {
-        bookingId,
+      { bookingId, eventId, seatIds: assignedSeats.map((s) => s.id) },
+      "Seats assigned",
+    );
+  },
+
+  releaseSeats: async (msg: SeatRelease): Promise<void> => {
+    const { messageId, bookingId, eventId, seatIds } = msg;
+
+    if (await seatRepository.isProcessed(messageId)) {
+      logger.debug({ messageId, bookingId }, "seat.release already processed");
+      return;
+    }
+
+    let released = 0;
+    await db.transaction(async (tx) => {
+      released = await seatRepository.releaseSeats(
+        tx as typeof db,
+        seatIds,
         eventId,
-        seatId: assignedSeat.id,
-        seat: assignedSeat.seatNumber,
-      },
-      "Seat assigned — seat.reserved emitted",
+      );
+      await seatRepository.markProcessedWithTx(
+        tx as typeof db,
+        messageId,
+        TOPICS.SEAT_RELEASE,
+      );
+    });
+
+    // Restore the Redis counter for each released seat
+    for (let i = 0; i < released; i++) {
+      await seatsCounter.increment(eventId);
+    }
+
+    logger.info(
+      { bookingId, eventId, released },
+      "Seats released back to available",
     );
   },
 };

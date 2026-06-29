@@ -31,7 +31,7 @@ export const bookingRepository = {
   updateWithTx: async (
     tx: Tx,
     id: string,
-    data: Partial<Pick<Booking, "seatId" | "status" | "seatNumber">>,
+    data: Partial<Pick<Booking, "seatIds" | "seatNumbers" | "status">>,
   ): Promise<Booking | undefined> => {
     const [updated] = await tx
       .update(bookings)

@@ -10,7 +10,6 @@ export const seatRepository = {
     const result = await db.execute(
       sql`SELECT COUNT(*) as count FROM seats WHERE event_id = ${eventId} AND status = 'available'`,
     );
-
     return parseInt((result.rows[0] as { count: string }).count, 10);
   },
 
@@ -33,36 +32,55 @@ export const seatRepository = {
       seatNumber: `Seat ${i + 1}`,
       status: "available" as const,
     }));
-
     await tx.insert(seats).values(values).onConflictDoNothing();
   },
 
-  pickAndLockSeat: async (
+  pickAndLockSeats: async (
     tx: Tx,
     eventId: string,
     bookingId: string,
-  ): Promise<Seat | undefined> => {
+    quantity: number,
+  ): Promise<Seat[]> => {
     const result = await tx.execute(sql`
       SELECT * FROM seats
       WHERE event_id = ${eventId}
-      AND status = 'available'
+        AND status = 'available'
       ORDER BY seat_number
-      LIMIT 1
+      LIMIT ${quantity}
       FOR UPDATE SKIP LOCKED
-      `);
-    if (result.rows.length === 0) return undefined;
+    `);
 
-    const row = result.rows[0] as Seat;
+    if (result.rows.length < quantity) return [];
+
+    const rows = result.rows as Seat[];
+    const ids = rows.map((r) => r.id);
 
     await tx.execute(sql`
       UPDATE seats
       SET status = 'held',
           held_by = ${bookingId},
           updated_at = NOW()
-      WHERE id = ${row.id}
+      WHERE id = ANY(${sql.raw(`ARRAY['${ids.join("','")}']::text[]`)})
     `);
 
-    return row;
+    return rows;
+  },
+
+  releaseSeats: async (
+    tx: Tx,
+    seatIds: string[],
+    eventId: string,
+  ): Promise<number> => {
+    const result = await tx.execute(sql`
+      UPDATE seats
+      SET status = 'available',
+          held_by = NULL,
+          updated_at = NOW()
+      WHERE id = ANY(${sql.raw(`ARRAY['${seatIds.join("','")}']::text[]`)})
+        AND event_id = ${eventId}
+        AND status = 'held'
+    `);
+    return (result as { rowCount: number }).rowCount ?? 0;
   },
 
   isProcessed: async (messageId: string): Promise<boolean> => {
