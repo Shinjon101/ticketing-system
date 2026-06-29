@@ -1,13 +1,23 @@
-import { createApp } from "./app";
-import { env } from "./config/env";
-import { logger } from "./config/logger";
-import { connectDB, disconnectDB } from "./db";
+import { connectDB, disconnectDB } from "@/db";
+import { createApp } from "@/app";
+import { createKafkaProducer, startKafkaConsumer } from "@/kafka";
+import { startOutboxPoller, stopOutboxPoller } from "@/outbox/outbox.poller";
+import { startExpiryJob, stopExpiryJob } from "@/payment/expiry.job";
+import { env } from "@/config/env";
+import { logger } from "@/config/logger";
 
 const start = async () => {
   await connectDB();
 
-  const app = createApp();
+  const producer = createKafkaProducer();
+  await producer.connect();
 
+  void startOutboxPoller(producer);
+  void startExpiryJob();
+
+  const stopConsumer = await startKafkaConsumer();
+
+  const app = createApp();
   const server = app.listen(env.PORT, () => {
     logger.info({ port: env.PORT }, "Payment service started");
   });
@@ -15,7 +25,11 @@ const start = async () => {
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutdown signal received");
     server.close(async () => {
+      stopOutboxPoller();
+      stopExpiryJob();
       await sleep(2_000);
+      await stopConsumer();
+      await producer.disconnect();
       await disconnectDB();
       logger.info("Payment service shutdown complete");
       process.exit(0);

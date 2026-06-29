@@ -1,11 +1,25 @@
 import express, { type Application } from "express";
 import { errorHandler } from "./middlewares/error-handler";
 import { getPoolStats } from "./db";
+import { paymentRouter } from "./payment/payment.routes";
 
 export const createApp = (): Application => {
   const app = express();
 
+  app.use((req, res, next) => {
+    let data = "";
+    req.on("data", (chunk: Buffer) => {
+      data += chunk.toString();
+    });
+    req.on("end", () => {
+      (req as express.Request & { rawBody: string }).rawBody = data;
+      next();
+    });
+  });
+
   app.use(express.json());
+
+  app.use("/payments", paymentRouter);
 
   app.get("/health", (_req, res) => {
     const pool = getPoolStats();
