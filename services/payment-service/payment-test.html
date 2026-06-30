@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+const options = {
+  key: "order_T7ZHq6vO9LFXgn",       
+  amount: 10000,             
+  currency: "INR",
+  order_id: "rzp_test_T7RLlgXUvaKxqj",   
+  handler: function(response) {
+    fetch("http://localhost:4007/payments/verify", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer <token>"
+      },
+      body: JSON.stringify({
+        bookingId: "<bookingId>",
+        razorpayOrderId: response.razorpay_order_id,
+        razorpayPaymentId: response.razorpay_payment_id,
+        razorpaySignature: response.razorpay_signature,
+      })
+    }).then(r => r.json()).then(console.log);
+  }
+};
+const rzp = new Razorpay(options);
+rzp.open();
+</script>
+</body>
+</html>

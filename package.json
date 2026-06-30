@@ -8,6 +8,7 @@
     "build": "pnpm -r --workspace-root=false run build",
     "dev": "pnpm -r --workspace-root=false run dev",
     "lint": "pnpm -r --workspace-root=false run lint",
+    "db:gen": "pnpm -r --workspace-root=false run db:generate",
     "db:migrate": "pnpm -r --workspace-root=false run db:migrate",
     "format": "pnpm -r --workspace-root=false run format",
     "test": "pnpm -r --workspace-root=false run test"

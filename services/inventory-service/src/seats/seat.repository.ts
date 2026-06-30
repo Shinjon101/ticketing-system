@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { sql, eq } from "@ticketing/db";
+import { sql, eq, and, inArray, count } from "@ticketing/db";
 import { NewSeat, Seat, seats } from "./seat.table";
 import { processedEvents } from "./processed-events.table";
 
@@ -7,10 +7,13 @@ type Tx = typeof db;
 
 export const seatRepository = {
   countAvailable: async (eventId: string): Promise<number> => {
-    const result = await db.execute(
-      sql`SELECT COUNT(*) as count FROM seats WHERE event_id = ${eventId} AND status = 'available'`,
-    );
-    return parseInt((result.rows[0] as { count: string }).count, 10);
+    // Migrated: Native Drizzle COUNT query
+    const result = await db
+      .select({ value: count() })
+      .from(seats)
+      .where(and(eq(seats.eventId, eventId), eq(seats.status, "available")));
+
+    return result[0].value;
   },
 
   findById: async (id: string): Promise<Seat | undefined> => {
@@ -41,27 +44,28 @@ export const seatRepository = {
     bookingId: string,
     quantity: number,
   ): Promise<Seat[]> => {
-    const result = await tx.execute(sql`
-      SELECT * FROM seats
-      WHERE event_id = ${eventId}
-        AND status = 'available'
-      ORDER BY seat_number
-      LIMIT ${quantity}
-      FOR UPDATE SKIP LOCKED
-    `);
+    // Migrated: Native Drizzle SELECT FOR UPDATE SKIP LOCKED
+    const rows = await tx
+      .select()
+      .from(seats)
+      .where(and(eq(seats.eventId, eventId), eq(seats.status, "available")))
+      .orderBy(seats.seatNumber)
+      .limit(quantity)
+      .for("update", { skipLocked: true });
 
-    if (result.rows.length < quantity) return [];
+    if (rows.length < quantity) return [];
 
-    const rows = result.rows as Seat[];
     const ids = rows.map((r) => r.id);
 
-    await tx.execute(sql`
-      UPDATE seats
-      SET status = 'held',
-          held_by = ${bookingId},
-          updated_at = NOW()
-      WHERE id = ANY(${sql.raw(`ARRAY['${ids.join("','")}']::text[]`)})
-    `);
+    // Migrated: Native Drizzle UPDATE
+    await tx
+      .update(seats)
+      .set({
+        status: "held",
+        heldBy: bookingId,
+        updatedAt: new Date(),
+      })
+      .where(inArray(seats.id, ids));
 
     return rows;
   },
@@ -71,16 +75,27 @@ export const seatRepository = {
     seatIds: string[],
     eventId: string,
   ): Promise<number> => {
-    const result = await tx.execute(sql`
-      UPDATE seats
-      SET status = 'available',
-          held_by = NULL,
-          updated_at = NOW()
-      WHERE id = ANY(${sql.raw(`ARRAY['${seatIds.join("','")}']::text[]`)})
-        AND event_id = ${eventId}
-        AND status = 'held'
-    `);
-    return (result as { rowCount: number }).rowCount ?? 0;
+    // Drizzle throws an error if inArray receives an empty array, so we guard against it
+    if (seatIds.length === 0) return 0;
+
+    // Migrated: Native Drizzle UPDATE with .returning() to get the exact row count
+    const result = await tx
+      .update(seats)
+      .set({
+        status: "available",
+        heldBy: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          inArray(seats.id, seatIds),
+          eq(seats.eventId, eventId),
+          eq(seats.status, "held"),
+        ),
+      )
+      .returning({ updatedId: seats.id });
+
+    return result.length;
   },
 
   isProcessed: async (messageId: string): Promise<boolean> => {
