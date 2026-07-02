@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { sql, eq, and, inArray, count } from "@ticketing/db";
+import { eq, and, inArray, count } from "@ticketing/db";
 import { NewSeat, Seat, seats } from "./seat.table";
 import { processedEvents } from "./processed-events.table";
 
@@ -7,7 +7,6 @@ type Tx = typeof db;
 
 export const seatRepository = {
   countAvailable: async (eventId: string): Promise<number> => {
-    // Migrated: Native Drizzle COUNT query
     const result = await db
       .select({ value: count() })
       .from(seats)
@@ -33,6 +32,7 @@ export const seatRepository = {
     const values: NewSeat[] = Array.from({ length: totalSeats }, (_, i) => ({
       eventId,
       seatNumber: `Seat ${i + 1}`,
+      seatIndex: i + 1,
       status: "available" as const,
     }));
     await tx.insert(seats).values(values).onConflictDoNothing();
@@ -44,12 +44,11 @@ export const seatRepository = {
     bookingId: string,
     quantity: number,
   ): Promise<Seat[]> => {
-    // Migrated: Native Drizzle SELECT FOR UPDATE SKIP LOCKED
     const rows = await tx
       .select()
       .from(seats)
       .where(and(eq(seats.eventId, eventId), eq(seats.status, "available")))
-      .orderBy(seats.seatNumber)
+      .orderBy(seats.seatIndex)
       .limit(quantity)
       .for("update", { skipLocked: true });
 
@@ -57,7 +56,6 @@ export const seatRepository = {
 
     const ids = rows.map((r) => r.id);
 
-    // Migrated: Native Drizzle UPDATE
     await tx
       .update(seats)
       .set({
@@ -75,10 +73,8 @@ export const seatRepository = {
     seatIds: string[],
     eventId: string,
   ): Promise<number> => {
-    // Drizzle throws an error if inArray receives an empty array, so we guard against it
     if (seatIds.length === 0) return 0;
 
-    // Migrated: Native Drizzle UPDATE with .returning() to get the exact row count
     const result = await tx
       .update(seats)
       .set({

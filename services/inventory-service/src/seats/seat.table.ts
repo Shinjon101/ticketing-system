@@ -1,4 +1,4 @@
-import { pgEnum, pgTable, text, timestamp } from "@ticketing/db";
+import { integer, pgEnum, pgTable, text, timestamp } from "@ticketing/db";
 
 export const seatStatusEnum = pgEnum("seat_status", [
   "available",
@@ -12,6 +12,8 @@ export const seats = pgTable("seats", {
     .$defaultFn(() => crypto.randomUUID()),
 
   eventId: text("event_id").notNull(),
+
+  seatIndex: integer("seat_index").notNull().default(0),
 
   seatNumber: text("seat_number").notNull(),
 

@@ -1,0 +1,1 @@
+ALTER TABLE "seats" ADD COLUMN "seat_index" integer DEFAULT 0 NOT NULL;
