@@ -117,4 +117,13 @@ export const seatRepository = {
       .values({ messageId, topic })
       .onConflictDoNothing();
   },
+
+  markBookedWithTx: async (tx: Tx, bookingId: string): Promise<number> => {
+    const result = await tx
+      .update(seats)
+      .set({ status: "booked", updatedAt: new Date() })
+      .where(and(eq(seats.heldBy, bookingId), eq(seats.status, "held")))
+      .returning({ id: seats.id });
+    return result.length;
+  },
 };

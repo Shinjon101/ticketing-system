@@ -3,20 +3,23 @@
 <body>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>
+
+const authToken ="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxN2U0OGQ1Zi1mMzhmLTRkNzItYTUwOS01MjVlZjgxNjMxNDYiLCJlbWFpbCI6InRlc3QyQGV4YW1wbGUuY29tIiwicm9sZSI6InVzZXIiLCJpYXQiOjE3ODI4NDM4ODksImV4cCI6MTc4Mjg0NDc4OX0.SkDssD4gJ82Nc10lRClBmL1B13sJy7oOCBRPaBQeUy4oqfZes1hP-iXU-Rsfi67i93HN8rTU8d6xQO030w0fk-T0agPXiDSqieKjUAtouKOEQRbccx5MWHtTKwuVPyUhn3Gu56rqBxAcU9gptpiOR_dfGuTmMaOtLy9jGMZWrFdkYP3yh7xXbQT31a3aXg3nC_r6IfvQrdsFqHjzr-6eK_SNLCWpa9UO6yPhqIMCRxm-2a1Qcv_e4WlCr4gij7bgqV_KuspEKiip4T2-6pVET5D832PBPNod3U20mwutaGmbIpgpo_oN5oPV4BPzORS0Jlt4A0sefphFx7oqvI67SQ";
+const bookingId="e62fc5f2-46be-4ca3-b717-b6139238ab7c";
 const options = {
-  key: "order_T7ZHq6vO9LFXgn",       
-  amount: 10000,             
+  key: "rzp_test_T7RLlgXUvaKxqj",       
+  amount: 150000,             
   currency: "INR",
-  order_id: "rzp_test_T7RLlgXUvaKxqj",   
+  order_id: "order_T7wMra0EsQdbq3",   
   handler: function(response) {
     fetch("http://localhost:4007/payments/verify", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": "Bearer <token>"
+        "Authorization": `Bearer ${authToken}`
       },
       body: JSON.stringify({
-        bookingId: "<bookingId>",
+        bookingId: `${bookingId}`,
         razorpayOrderId: response.razorpay_order_id,
         razorpayPaymentId: response.razorpay_payment_id,
         razorpaySignature: response.razorpay_signature,
@@ -24,6 +27,7 @@ const options = {
     }).then(r => r.json()).then(console.log);
   }
 };
+console.log(`Sending token:", "Bearer " + ${authToken}`);
 const rzp = new Razorpay(options);
 rzp.open();
 </script>

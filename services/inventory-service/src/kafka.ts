@@ -3,6 +3,7 @@ import {
   createProducer,
   EventCreated,
   KafkaProducer,
+  PaymentCompleted,
   SeatRelease,
   SeatReserveRequested,
   TOPICS,
@@ -39,6 +40,10 @@ export const startKafkaConsumer = async (
 
     [TOPICS.SEAT_RELEASE]: async (msg: SeatRelease) => {
       await seatService.releaseSeats(msg);
+    },
+
+    [TOPICS.PAYMENT_COMPLETED]: async (msg: PaymentCompleted) => {
+      await seatService.onPaymentCompleted(msg);
     },
   });
 

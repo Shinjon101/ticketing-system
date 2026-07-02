@@ -45,7 +45,12 @@ async function runExpiryCheck(): Promise<void> {
         await tx
           .update(holds)
           .set({ status: "failed", updatedAt: new Date() })
-          .where(eq(holds.bookingId, hold.bookingId));
+          .where(
+            and(
+              eq(holds.bookingId, hold.bookingId),
+              eq(holds.status, "pending"),
+            ),
+          );
 
         await outboxRepository.createWithTx(tx as typeof db, {
           topic: TOPICS.PAYMENT_FAILED,

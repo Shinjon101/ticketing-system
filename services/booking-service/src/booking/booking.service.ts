@@ -13,6 +13,7 @@ import {
   TOPICS,
 } from "@ticketing/kafka-client";
 import { bookingCache } from "@/redis/booking.cache";
+import logger from "@/config/logger";
 
 export interface CreateBookingInput {
   userId: string;
@@ -21,7 +22,7 @@ export interface CreateBookingInput {
   quantity: number;
 }
 
-const HOLD_DURATION_MS = 2 * 60 * 1000; // 2 minutes
+const HOLD_DURATION_MS = 30 * 60 * 1000; // 30 min
 
 export const bookingService = {
   getById: async (id: string, userId: string): Promise<Booking> => {
@@ -108,7 +109,10 @@ export const bookingService = {
     const expiresAt = new Date(Date.now() + HOLD_DURATION_MS).toISOString();
 
     const updatedBooking = await db.transaction(async (tx) => {
-      const booking = await bookingRepository.findById(bookingId);
+      const booking = await bookingRepository.findByIdWithTx(
+        tx as typeof db,
+        bookingId,
+      );
       if (!booking) return undefined;
 
       const updated = await bookingRepository.updateWithTx(
@@ -198,7 +202,10 @@ export const bookingService = {
     if (await bookingRepository.isProcessed(messageId)) return;
 
     const updatedBooking = await db.transaction(async (tx) => {
-      const booking = await bookingRepository.findById(bookingId);
+      const booking = await bookingRepository.findByIdWithTx(
+        tx as typeof db,
+        bookingId,
+      );
       if (!booking) return undefined;
 
       const updated = await bookingRepository.updateWithTx(
@@ -219,6 +226,11 @@ export const bookingService = {
             seatIds: booking.seatIds,
           },
         });
+      } else {
+        logger.warn(
+          { bookingId },
+          "payment.failed received but booking has no held seats to release",
+        );
       }
 
       await bookingRepository.markProcessedWithTx(

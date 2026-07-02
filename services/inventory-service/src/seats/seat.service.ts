@@ -1,6 +1,7 @@
 import {
   EventCreated,
   KafkaProducer,
+  PaymentCompleted,
   SeatRelease,
   SeatReserveRequested,
   TOPICS,
@@ -114,6 +115,7 @@ export const seatService = {
     }
 
     let released = 0;
+
     await db.transaction(async (tx) => {
       released = await seatRepository.releaseSeats(
         tx as typeof db,
@@ -127,6 +129,13 @@ export const seatService = {
       );
     });
 
+    if (released !== seatIds.length) {
+      logger.warn(
+        { bookingId, eventId, expected: seatIds.length, released },
+        "Seat release count mismatch",
+      );
+    }
+
     // Restore the Redis counter for each released seat
     for (let i = 0; i < released; i++) {
       await seatsCounter.increment(eventId);
@@ -136,5 +145,25 @@ export const seatService = {
       { bookingId, eventId, released },
       "Seats released back to available",
     );
+  },
+
+  onPaymentCompleted: async (msg: PaymentCompleted): Promise<void> => {
+    const { messageId, bookingId } = msg;
+    if (await seatRepository.isProcessed(messageId)) return;
+
+    let bookedCount = 0;
+    await db.transaction(async (tx) => {
+      bookedCount = await seatRepository.markBookedWithTx(
+        tx as typeof db,
+        bookingId,
+      );
+      await seatRepository.markProcessedWithTx(
+        tx as typeof db,
+        messageId,
+        TOPICS.PAYMENT_COMPLETED,
+      );
+    });
+
+    logger.info({ bookingId, bookedCount }, "Seats marked booked");
   },
 };

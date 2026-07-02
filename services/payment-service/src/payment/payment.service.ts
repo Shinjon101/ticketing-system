@@ -8,7 +8,7 @@ import { logger } from "@/config/logger";
 import { HttpError } from "@ticketing/common";
 import { paymentRepository } from "./payment.repository";
 import { holds } from "./hold.table";
-import { eq } from "@ticketing/db";
+import { and, eq } from "@ticketing/db";
 import { outboxRepository } from "@/outbox/outbox.repository";
 
 const razorpay = new Razorpay({
@@ -130,7 +130,6 @@ export const paymentService = {
       throw new HttpError(410, "Seat hold expired — please try booking again");
     }
 
-    // razorpay.com/docs/payments/third-party-validation/standard-integration
     const generatedSignature = crypto
       .createHmac("sha256", env.RAZORPAY_KEY_SECRET)
       .update(`${razorpayOrderId}|${razorpayPaymentId}`)
@@ -145,36 +144,15 @@ export const paymentService = {
       throw new HttpError(400, "Payment signature verification failed");
     }
 
-    await db.transaction(async (tx) => {
-      await paymentRepository.markCapturedWithTx(
-        tx as typeof db,
-        razorpayOrderId,
-        razorpayPaymentId,
-        razorpaySignature,
-      );
-
-      await tx
-        .update(holds)
-        .set({ status: "completed", updatedAt: new Date() })
-        .where(eq(holds.bookingId, bookingId));
-
-      await outboxRepository.createWithTx(tx as typeof db, {
-        topic: TOPICS.PAYMENT_COMPLETED,
-        payload: {
-          messageId: crypto.randomUUID(),
-          bookingId,
-          razorpayPaymentId,
-          razorpayOrderId,
-          amount: hold.amount,
-          paidAt: new Date().toISOString(),
-        },
-      });
+    const completed = await completeCapturedPayment({
+      bookingId,
+      razorpayOrderId,
+      razorpayPaymentId,
+      razorpaySignature,
     });
+    if (!completed)
+      throw new HttpError(409, "Payment could not be completed for this hold");
 
-    logger.info(
-      { bookingId, razorpayPaymentId },
-      "Payment verified and completed",
-    );
     return { status: "captured", bookingId };
   },
 
@@ -207,10 +185,12 @@ export const paymentService = {
     if (!payment) return;
 
     if (event.event === "payment.captured" && payment.status !== "captured") {
-      logger.info(
-        { orderId: paymentEntity.order_id },
-        "Webhook: payment captured",
-      );
+      await completeCapturedPayment({
+        bookingId: payment.bookingId,
+        razorpayOrderId: paymentEntity.order_id,
+        razorpayPaymentId: paymentEntity.id,
+        razorpaySignature: razorpaySignatureHeader,
+      });
     }
 
     if (event.event === "payment.failed" && payment.status === "created") {
@@ -219,6 +199,59 @@ export const paymentService = {
   },
 };
 
+async function completeCapturedPayment(params: {
+  bookingId: string;
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  razorpaySignature: string;
+}): Promise<boolean> {
+  const { bookingId, razorpayOrderId, razorpayPaymentId, razorpaySignature } =
+    params;
+
+  let completed = false;
+
+  await db.transaction(async (tx) => {
+    const result = await tx
+      .update(holds)
+      .set({ status: "completed", updatedAt: new Date() })
+      .where(and(eq(holds.bookingId, bookingId), eq(holds.status, "pending")))
+      .returning({ amount: holds.amount });
+
+    if (result.length === 0) {
+      logger.warn(
+        { bookingId },
+        "completeCapturedPayment: hold not pending — skipping",
+      );
+      return;
+    }
+    completed = true;
+    const amount = result[0].amount;
+
+    await paymentRepository.markCapturedWithTx(
+      tx as typeof db,
+      razorpayOrderId,
+      razorpayPaymentId,
+      razorpaySignature,
+    );
+
+    await outboxRepository.createWithTx(tx as typeof db, {
+      topic: TOPICS.PAYMENT_COMPLETED,
+      payload: {
+        messageId: crypto.randomUUID(),
+        bookingId,
+        razorpayPaymentId,
+        razorpayOrderId,
+        amount,
+        paidAt: new Date().toISOString(),
+      },
+    });
+  });
+
+  if (completed)
+    logger.info({ bookingId, razorpayPaymentId }, "Payment completed");
+  return completed;
+}
+
 async function publishPaymentFailed(
   bookingId: string,
   reason:
@@ -226,12 +259,24 @@ async function publishPaymentFailed(
     | "payment_cancelled"
     | "hold_expired"
     | "signature_mismatch",
-): Promise<void> {
+): Promise<boolean> {
+  let updated = false;
+
   await db.transaction(async (tx) => {
-    await tx
+    const result = await tx
       .update(holds)
       .set({ status: "failed", updatedAt: new Date() })
-      .where(eq(holds.bookingId, bookingId));
+      .where(and(eq(holds.bookingId, bookingId), eq(holds.status, "pending")))
+      .returning({ bookingId: holds.bookingId });
+
+    if (result.length === 0) {
+      logger.warn(
+        { bookingId, reason },
+        "publishPaymentFailed: hold not pending — skipping",
+      );
+      return;
+    }
+    updated = true;
 
     await outboxRepository.createWithTx(tx as typeof db, {
       topic: TOPICS.PAYMENT_FAILED,
@@ -243,4 +288,6 @@ async function publishPaymentFailed(
       },
     });
   });
+
+  return updated;
 }

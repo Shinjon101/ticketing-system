@@ -15,6 +15,15 @@ export const bookingRepository = {
     return result[0];
   },
 
+  findByIdWithTx: async (tx: Tx, id: string): Promise<Booking | undefined> => {
+    const result = await tx
+      .select()
+      .from(bookings)
+      .where(eq(bookings.id, id))
+      .limit(1);
+    return result[0];
+  },
+
   findByUserId: async (userId: string): Promise<Booking[]> => {
     return db
       .select()
