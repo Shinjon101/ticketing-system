@@ -26,7 +26,7 @@ export function stopExpiryJob(): void {
   stopRequested = true;
 }
 
-async function runExpiryCheck(): Promise<void> {
+export async function runExpiryCheck(): Promise<void> {
   try {
     const expired = await db
       .select()

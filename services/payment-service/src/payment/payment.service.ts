@@ -1,4 +1,5 @@
 import { env } from "@/config/env";
+import { verifyPaymentSignature, verifyWebhookSignature } from "./signature";
 import crypto from "crypto";
 import { db } from "@/db";
 import { BookingSeatHeld, TOPICS } from "@ticketing/kafka-client";
@@ -130,12 +131,14 @@ export const paymentService = {
       throw new HttpError(410, "Seat hold expired — please try booking again");
     }
 
-    const generatedSignature = crypto
-      .createHmac("sha256", env.RAZORPAY_KEY_SECRET)
-      .update(`${razorpayOrderId}|${razorpayPaymentId}`)
-      .digest("hex");
-
-    if (generatedSignature !== razorpaySignature) {
+    if (
+      !verifyPaymentSignature(
+        razorpayOrderId,
+        razorpayPaymentId,
+        env.RAZORPAY_KEY_SECRET,
+        razorpaySignature,
+      )
+    ) {
       logger.warn(
         { bookingId, razorpayOrderId },
         "Signature verification failed",
@@ -160,12 +163,13 @@ export const paymentService = {
     rawBody: string,
     razorpaySignatureHeader: string,
   ): Promise<void> => {
-    const generatedSignature = crypto
-      .createHmac("sha256", env.RAZORPAY_WEBHOOK_SECRET)
-      .update(rawBody)
-      .digest("hex");
-
-    if (generatedSignature !== razorpaySignatureHeader) {
+    if (
+      !verifyWebhookSignature(
+        rawBody,
+        env.RAZORPAY_WEBHOOK_SECRET,
+        razorpaySignatureHeader,
+      )
+    ) {
       throw new HttpError(400, "Webhook signature verification failed");
     }
 
