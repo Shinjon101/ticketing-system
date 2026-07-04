@@ -50,23 +50,18 @@ export const bookingService = {
     const { eventId, idempotencyKey, userId, quantity } = input;
 
     const event = await eventCache.get(eventId);
-
-    if (!event) {
+    if (!event)
       throw new HttpError(404, "Event not found or not yet available");
-    }
-
     if (event.status !== "active") {
       throw new HttpError(
         400,
         `Event is ${event.status} — bookings not accepted`,
       );
     }
-
     if (event.saleStartsAt && new Date() < new Date(event.saleStartsAt)) {
       throw new HttpError(400, "Sale has not started yet");
     }
 
-    //idempotency check
     const existingBookingId = await idempotencyCache.get(idempotencyKey);
     if (existingBookingId) {
       const existing = await bookingRepository.findById(existingBookingId);
@@ -75,33 +70,46 @@ export const bookingService = {
 
     let booking!: Booking;
 
-    await db.transaction(async (tx) => {
-      booking = await bookingRepository.createWithTx(tx as typeof db, {
-        userId,
-        eventId,
-        quantity,
-        status: "pending",
-        amount: event.price * quantity,
-        idempotencyKey,
-      });
-
-      await outboxRepository.createWithTx(tx as typeof db, {
-        topic: TOPICS.SEAT_RESERVE_REQUESTED,
-        payload: {
-          messageId: crypto.randomUUID(),
-          bookingId: booking.id,
+    try {
+      await db.transaction(async (tx) => {
+        booking = await bookingRepository.createWithTx(tx as typeof db, {
           userId,
           eventId,
           quantity,
-          requestedAt: new Date().toISOString(),
-        },
-      });
-    });
-    await idempotencyCache.claim(idempotencyKey, booking.id);
+          status: "pending",
+          amount: event.price * quantity,
+          idempotencyKey,
+        });
 
+        await outboxRepository.createWithTx(tx as typeof db, {
+          topic: TOPICS.SEAT_RESERVE_REQUESTED,
+          payload: {
+            messageId: crypto.randomUUID(),
+            bookingId: booking.id,
+            userId,
+            eventId,
+            quantity,
+            requestedAt: new Date().toISOString(),
+          },
+        });
+      });
+    } catch (err) {
+      if (isUniqueViolation(err, "bookings_idempotency_key_unique")) {
+        const existing =
+          await bookingRepository.findByIdempotencyKey(idempotencyKey);
+        if (existing) {
+          await idempotencyCache
+            .claim(idempotencyKey, existing.id)
+            .catch(() => {});
+          return existing;
+        }
+      }
+      throw err;
+    }
+
+    await idempotencyCache.claim(idempotencyKey, booking.id);
     return booking;
   },
-
   onSeatReserved: async (msg: SeatReserved): Promise<void> => {
     const { messageId, bookingId, seatIds, seatNumbers } = msg;
     if (await bookingRepository.isProcessed(messageId)) return;
@@ -243,4 +251,11 @@ export const bookingService = {
 
     if (updatedBooking) await bookingCache.set(updatedBooking);
   },
+};
+
+const isUniqueViolation = (err: unknown, constraint?: string): boolean => {
+  const candidate = (err as { cause?: unknown })?.cause ?? err;
+  const pgErr = candidate as { code?: string; constraint?: string };
+  if (pgErr?.code !== "23505") return false;
+  return constraint ? pgErr.constraint === constraint : true;
 };

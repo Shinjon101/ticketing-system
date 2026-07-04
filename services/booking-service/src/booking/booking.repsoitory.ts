@@ -69,4 +69,15 @@ export const bookingRepository = {
       .values({ messageId, topic })
       .onConflictDoNothing();
   },
+
+  findByIdempotencyKey: async (
+    idempotencyKey: string,
+  ): Promise<Booking | undefined> => {
+    const result = await db
+      .select()
+      .from(bookings)
+      .where(eq(bookings.idempotencyKey, idempotencyKey))
+      .limit(1);
+    return result[0];
+  },
 };
