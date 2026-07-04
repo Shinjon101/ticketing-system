@@ -3,7 +3,7 @@ import { resolve } from "path";
 
 export default defineConfig({
   test: {
-    name: "inventory-service:integration",
+    name: "booking-service:integration",
     environment: "node",
     globals: true,
     include: ["src/tests/integration/**/*.test.ts"],
@@ -14,7 +14,5 @@ export default defineConfig({
     maxWorkers: 1,
     isolate: false,
   },
-  resolve: {
-    alias: { "@": resolve(__dirname, "./src") },
-  },
+  resolve: { alias: { "@": resolve(__dirname, "./src") } },
 });
