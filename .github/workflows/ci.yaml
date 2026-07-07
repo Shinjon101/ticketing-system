@@ -1,5 +1,5 @@
 name: CI
-
+description: Continuous Integration workflow for the ticketing system, version:2.0.0
 on:
   push:
     branches: [main]
@@ -47,6 +47,7 @@ jobs:
           pnpm --filter @ticketing/event-service typecheck
           pnpm --filter @ticketing/booking-service typecheck
           pnpm --filter @ticketing/inventory-service typecheck
+          pnpm --filter @ticketing/payment-service typecheck
 
       - name: Run tests
         run: pnpm --filter @ticketing/auth-service test
@@ -54,12 +55,34 @@ jobs:
           NODE_ENV: test
           JWT_PRIVATE_KEY: ${{ secrets.JWT_PRIVATE_KEY }}
           JWT_PUBLIC_KEY: ${{ secrets.JWT_PUBLIC_KEY }}
-          #Auth tests uses a mocked database.
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db
+
+      - name: Run inventory-service unit tests
+        run: pnpm --filter @ticketing/inventory-service test
+
+      - name: Run booking-service unit tests
+        run: pnpm --filter @ticketing/booking-service test
+
+      - name: Run payment-service unit tests
+        run: pnpm --filter @ticketing/payment-service test
+
+      #Integration tests via Testcontainers.
+
+      - name: Run inventory-service integration tests
+        run: pnpm --filter @ticketing/inventory-service test:integration
+
+      - name: Run booking-service integration tests
+        run: pnpm --filter @ticketing/booking-service test:integration
+
+      - name: Run payment-service integration tests
+        run: pnpm --filter @ticketing/payment-service test:integration
+
+  #NOTE: event-service has no test suite yet (typecheck only)
 
   docker:
     name: Docker build
     runs-on: ubuntu-latest
+    needs: validate
 
     steps:
       - name: Checkout code
@@ -103,3 +126,12 @@ jobs:
           push: false
           cache-from: type=gha,scope=inventory-service
           cache-to: type=gha,mode=max,scope=inventory-service
+
+      - name: Build payment-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/payment-service/Dockerfile
+          push: false
+          cache-from: type=gha,scope=payment-service
+          cache-to: type=gha,mode=max,scope=payment-service
