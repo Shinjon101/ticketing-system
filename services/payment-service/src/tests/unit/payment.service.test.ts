@@ -2,6 +2,20 @@ vi.mock("@/config/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+vi.mock("@/config/env", () => ({
+  env: {
+    NODE_ENV: "test",
+    PORT: 4007,
+    DATABASE_URL: "postgres://test:test@localhost:5432/test",
+    JWT_PUBLIC_KEY: "test-key",
+    KAFKA_BROKERS: "localhost:9092",
+    RAZORPAY_KEY_ID: "rzp_test_dummy",
+    RAZORPAY_KEY_SECRET: "dummy_key_secret",
+    RAZORPAY_WEBHOOK_SECRET: "dummy_webhook_secret",
+    LOG_LEVEL: "error",
+  },
+}));
+
 vi.mock("@/payment/hold.repository", () => ({
   holdRepository: {
     findByBookingId: vi.fn(),
