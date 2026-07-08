@@ -14,6 +14,12 @@ import {
 } from "@ticketing/kafka-client";
 import { bookingCache } from "@/redis/booking.cache";
 import logger from "@/config/logger";
+import {
+  bookingConfirmedTotal,
+  bookingCreatedTotal,
+  bookingDuplicateTotal,
+  bookingFailedTotal,
+} from "@/metrics";
 
 export interface CreateBookingInput {
   userId: string;
@@ -65,7 +71,10 @@ export const bookingService = {
     const existingBookingId = await idempotencyCache.get(idempotencyKey);
     if (existingBookingId) {
       const existing = await bookingRepository.findById(existingBookingId);
-      if (existing) return existing;
+      if (existing) {
+        bookingDuplicateTotal.inc();
+        return existing;
+      }
     }
 
     let booking!: Booking;
@@ -98,6 +107,7 @@ export const bookingService = {
         const existing =
           await bookingRepository.findByIdempotencyKey(idempotencyKey);
         if (existing) {
+          bookingDuplicateTotal.inc();
           await idempotencyCache
             .claim(idempotencyKey, existing.id)
             .catch(() => {});
@@ -108,6 +118,7 @@ export const bookingService = {
     }
 
     await idempotencyCache.claim(idempotencyKey, booking.id);
+    bookingCreatedTotal.inc();
     return booking;
   },
   onSeatReserved: async (msg: SeatReserved): Promise<void> => {
@@ -179,7 +190,10 @@ export const bookingService = {
       return updated;
     });
 
-    if (updatedBooking) await bookingCache.set(updatedBooking);
+    if (updatedBooking) {
+      await bookingCache.set(updatedBooking);
+      bookingFailedTotal.inc({ reason: msg.reason });
+    }
   },
 
   onPaymentCompleted: async (msg: PaymentCompleted): Promise<void> => {
@@ -202,7 +216,10 @@ export const bookingService = {
       return updated;
     });
 
-    if (updatedBooking) await bookingCache.set(updatedBooking);
+    if (updatedBooking) {
+      bookingConfirmedTotal.inc();
+      await bookingCache.set(updatedBooking);
+    }
   },
 
   onPaymentFailed: async (msg: PaymentFailed): Promise<void> => {
@@ -249,7 +266,10 @@ export const bookingService = {
       return updated;
     });
 
-    if (updatedBooking) await bookingCache.set(updatedBooking);
+    if (updatedBooking) {
+      await bookingCache.set(updatedBooking);
+      bookingFailedTotal.inc({ reason: msg.reason });
+    }
   },
 };
 
