@@ -10,7 +10,7 @@ export const createLogger = (options: CreateLoggerOptions): Logger => {
   const { name, ...rest } = options;
 
   const transport =
-    process.env.NODE_ENV === "development"
+    process.env.LOG_PRETTY === "true"
       ? {
           target: "pino-pretty",
           options: {

@@ -6,3 +6,4 @@ export * from "./http/error-handler";
 export type { Logger } from "pino";
 export { z } from "zod";
 export * from "./errors/http-error";
+export * from "./metrics";
