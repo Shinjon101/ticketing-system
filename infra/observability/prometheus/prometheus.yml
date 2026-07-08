@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "booking-service"
+    static_configs:
+      - targets: ["booking-service:4005"]
