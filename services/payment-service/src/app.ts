@@ -2,9 +2,12 @@ import express, { type Application } from "express";
 import { errorHandler } from "./middlewares/error-handler";
 import { getPoolStats } from "./db";
 import { paymentRouter } from "./payment/payment.routes";
+import { httpMetricsMiddleware, metricsRoute } from "./metrics";
 
 export const createApp = (): Application => {
   const app = express();
+
+  app.use(httpMetricsMiddleware);
 
   app.use(
     express.json({
@@ -16,6 +19,8 @@ export const createApp = (): Application => {
   );
 
   app.use("/payments", paymentRouter);
+
+  app.get("/metrics", metricsRoute);
 
   app.get("/health", (_req, res) => {
     const pool = getPoolStats();

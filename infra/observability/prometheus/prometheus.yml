@@ -6,3 +6,15 @@ scrape_configs:
   - job_name: "booking-service"
     static_configs:
       - targets: ["booking-service:4005"]
+  - job_name: "auth-service"
+    static_configs:
+      - targets: ["auth-service:4003"]
+  - job_name: "inventory-service"
+    static_configs:
+      - targets: ["inventory-service:4006"]
+  - job_name: "payment-service"
+    static_configs:
+      - targets: ["payment-service:4007"]
+  - job_name: "event-service"
+    static_configs:
+      - targets: ["event-service:4004"]

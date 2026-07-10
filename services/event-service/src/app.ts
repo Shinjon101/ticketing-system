@@ -3,10 +3,12 @@ import logger from "@/config/logger";
 import { eventRouter } from "@/events/events.routes";
 import { getPoolStats } from "@/db";
 import { errorHandler } from "@/middleware/error-handler";
+import { httpMetricsMiddleware, metricsRoute } from "./metrics";
 
 export const createApp = (): Application => {
   const app = express();
 
+  app.use(httpMetricsMiddleware);
   app.use(express.json());
 
   app.use((req, _res, next) => {
@@ -15,6 +17,8 @@ export const createApp = (): Application => {
   });
 
   app.use("/events", eventRouter);
+
+  app.get("/metrics", metricsRoute);
 
   app.get("/health", (_req, res) => {
     const pool = getPoolStats();

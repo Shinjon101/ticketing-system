@@ -6,10 +6,12 @@ import { authRouter } from "@/auth/auth.routes";
 import { userRouter } from "@/users/user.routes";
 import { getPoolStats } from "@/db";
 import { errorHandler } from "@/middleware/error-handler";
+import { httpMetricsMiddleware, metricsRoute } from "./metrics";
 
 export const createApp = (): Application => {
   const app = express();
 
+  app.use(httpMetricsMiddleware);
   app.use(express.json());
 
   app.use(cookieParser());
@@ -37,6 +39,8 @@ export const createApp = (): Application => {
       },
     });
   });
+
+  app.get("/metrics", metricsRoute);
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Route not found" });
