@@ -289,11 +289,6 @@ services:
     volumes:
       - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
     ports:
       - "9090:9090"
     networks:
@@ -302,11 +297,14 @@ services:
 
 
   grafana:
-    image: grafana/grafana-enterprise
+    image: grafana/grafana
     container_name: grafana
     restart: unless-stopped
     ports:
       - '3000:3000'
+
+
+
     volumes:
       - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./infra/observability/grafana/dashboards:/etc/grafana/dashboards/json:ro

@@ -39,7 +39,17 @@
     {
       "title": "Live Logs",
       "type": "logs",
+     
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "sortOrder": "Descending",       
+        "dedupStrategy": "none",
+        "enableLogDetails": true
+        },
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "Loki" },
