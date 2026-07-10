@@ -3,11 +3,13 @@ import express from "express";
 import logger from "./config/logger";
 import { getPoolStats } from "./db";
 import { bookingRouter } from "./booking/booking.routes";
+import { httpMetricsMiddleware, metricsRoute } from "./metrics";
 
 export const createApp = (): Application => {
   const app = express();
 
   app.use(express.json());
+  app.use(httpMetricsMiddleware);
 
   app.use((req, _res, next) => {
     logger.debug({ method: req.method, path: req.path }, "Incoming request");
@@ -26,6 +28,8 @@ export const createApp = (): Application => {
       db: pool,
     });
   });
+
+  app.get("/metrics", metricsRoute);
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Route not found" });

@@ -1,0 +1,70 @@
+// 1. Define the destination (Loki)
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// 2. Discover ALL Docker containers
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// 3. Relabel to attach metadata labels
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  // Clean up container name (removes leading slash)
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  // Extract the Compose service name (Crucial for separating services in Grafana)
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "compose_service"
+  }
+}
+
+// 4. Tail the logs from all containers
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  forward_to = [loki.process.logs_processor.receiver]
+}
+
+// 5. Process log lines
+loki.process "logs_processor" {
+  // Extract common Pino JSON fields if they exist
+  stage.json {
+    expressions = {
+      level        = "level",
+      service_name = "name",
+      ts           = "time",
+    }
+  }
+
+  // FIXED: Using backticks instead of single quotes for the Go template string
+  stage.template {
+    source   = "level_text"
+    template = `{{ if eq .level "10" }}trace{{ else if eq .level "20" }}debug{{ else if eq .level "30" }}info{{ else if eq .level "40" }}warning{{ else if eq .level "50" }}error{{ else if eq .level "60" }}critical{{ else if eq .level "" }}unknown{{ else }}info{{ end }}`
+  }
+
+  // Use Pino's internal timestamp for accurate ordering
+  stage.timestamp {
+    source = "ts"
+    format = "UnixMs"
+  }
+
+  // Promote variables to indexable Loki labels
+  stage.labels {
+    values = {
+      "level"        = "level_text",
+      "service_name" = "service_name",
+    }
+  }
+
+  forward_to = [loki.write.default.receiver]
+}

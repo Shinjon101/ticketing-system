@@ -3,9 +3,11 @@ import express from "express";
 import { getPoolStats } from "./db";
 import { seatsCounter } from "./redis/seat-counter";
 import { seatRepository } from "./seats/seat.repository";
+import { httpMetricsMiddleware, metricsRoute } from "./metrics";
 
 export const createApp = (): Application => {
   const app: Application = express();
+  app.use(httpMetricsMiddleware);
   app.use(express.json());
 
   app.get("/health", (_req, res) => {
@@ -18,6 +20,8 @@ export const createApp = (): Application => {
       db: pool,
     });
   });
+
+  app.get("/metrics", metricsRoute);
 
   app.get("/seats/:eventId/available", async (req, res) => {
     try {

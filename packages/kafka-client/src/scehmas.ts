@@ -42,7 +42,11 @@ export const SeatReservedSchema = z.object({
 export const SeatFailedSchema = z.object({
   messageId: z.uuid(),
   bookingId: z.uuid(),
-  reason: z.enum(["no_seats_available", "event_not_found"]),
+  reason: z.enum([
+    "no_seats_available",
+    "event_not_found",
+    "insufficient_seats",
+  ]),
 });
 
 export const SeatReleaseSchema = z.object({
