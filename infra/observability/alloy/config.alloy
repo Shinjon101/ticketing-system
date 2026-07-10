@@ -43,14 +43,13 @@ loki.process "logs_processor" {
       level        = "level",
       service_name = "name",
       ts           = "time",
-      msg          = "msg",
     }
   }
 
   // FIXED: Using backticks instead of single quotes for the Go template string
   stage.template {
     source   = "level_text"
-    template = `{{ if eq .level "10" }}trace{{ else if eq .level "20" }}debug{{ else if eq .level "30" }}info{{ else if eq .level "40" }}warning{{ else if eq .level "50" }}error{{ else if eq .level "60" }}critical{{ else }}info{{ end }}`
+    template = `{{ if eq .level "10" }}trace{{ else if eq .level "20" }}debug{{ else if eq .level "30" }}info{{ else if eq .level "40" }}warning{{ else if eq .level "50" }}error{{ else if eq .level "60" }}critical{{ else if eq .level "" }}unknown{{ else }}info{{ end }}`
   }
 
   // Use Pino's internal timestamp for accurate ordering
