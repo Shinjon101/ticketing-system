@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payment-service-config
+data:
+  NODE_ENV: "production"
+  PORT: "4007"
+  LOG_LEVEL: "info"
+  KAFKA_BROKERS: "kafka:9092"

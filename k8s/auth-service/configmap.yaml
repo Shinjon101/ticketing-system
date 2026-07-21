@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-service-config
+data:
+  NODE_ENV: "production"
+  PORT: "4003"
+  LOG_LEVEL: "info"
+  JWT_ACCESS_EXPIRES_IN: "15m"
+  JWT_REFRESH_EXPIRES_IN: "7d"

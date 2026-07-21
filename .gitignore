@@ -31,3 +31,6 @@ public.pem
 *.njsproj
 *.sln
 *.sw?
+
+*secret.local.yaml
+*secrets.local.yaml
