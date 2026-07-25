@@ -1,12 +1,21 @@
 import { build } from "esbuild";
 
-await build({
-  entryPoints: ["src/index.ts"],
+const common = {
   bundle: true,
   platform: "node",
   target: "node22",
   format: "esm",
-  outfile: "dist/index.js",
   packages: "external",
   tsconfig: "./tsconfig.json",
+} as const;
+
+await build({
+  ...common,
+  entryPoints: ["src/index.ts"],
+  outfile: "dist/index.js",
+});
+await build({
+  ...common,
+  entryPoints: ["src/db/migrate.ts"],
+  outfile: "dist/db/migrate.js",
 });

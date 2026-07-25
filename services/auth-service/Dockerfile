@@ -51,6 +51,8 @@ WORKDIR /app
 COPY --chown=appuser:appgroup --from=builder /app/deploy/package.json ./
 COPY --chown=appuser:appgroup --from=builder /app/deploy/node_modules ./node_modules/
 COPY --chown=appuser:appgroup --from=builder /app/deploy/dist ./dist/
+COPY --chown=appuser:appgroup --from=builder /app/services/auth-service/src/db/migrations ./dist/db/migrations
+
 
 USER appuser
 
