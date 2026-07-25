@@ -1,0 +1,16 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: inventory-service-migrate
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: inventory-service:local
+          command: ["node", "dist/db/migrate.js"]
+          envFrom:
+            - secretRef: { name: inventory-service-secrets }
