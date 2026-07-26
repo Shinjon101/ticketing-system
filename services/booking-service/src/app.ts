@@ -16,7 +16,7 @@ export const createApp = (): Application => {
     next();
   });
 
-  app.use("/booking", bookingRouter);
+  app.use("/bookings", bookingRouter);
 
   app.get("/health", (_req, res) => {
     const pool = getPoolStats();

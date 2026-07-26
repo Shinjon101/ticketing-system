@@ -23,7 +23,7 @@ export const createApp = (): Application => {
 
   app.get("/metrics", metricsRoute);
 
-  app.get("/seats/:eventId/available", async (req, res) => {
+  app.get("/inventory/seats/:eventId/available", async (req, res) => {
     try {
       const eventId = String(req.params.eventId);
 
