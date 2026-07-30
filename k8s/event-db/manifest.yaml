@@ -2,6 +2,8 @@ apiVersion: v1
 kind: Service
 metadata:
   name: event-db
+  labels:
+    app: event-db
 spec:
   clusterIP: None  #headless service
   selector:
