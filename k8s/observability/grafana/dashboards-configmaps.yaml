@@ -1,0 +1,669 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-booking-service
+  namespace: observability
+  labels:
+    grafana_dashboard: "1" # Sidecar detects this
+data:
+  booking-service.json: |
+    {
+      "title": "Booking Service Overview",
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "panels": [
+        {
+          "title": "HTTP Request Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Prometheus" },
+              "expr": "sum(rate(http_requests_total{app=\"booking-service\"}[1m])) by (route, status_code)"
+            }
+          ]
+        },
+        {
+          "title": "HTTP p95 Latency",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "Prometheus" },
+              "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{app=\"booking-service\"}[5m])) by (le, route))"
+            }
+          ]
+        },
+        {
+          "title": "Live Logs",
+          "type": "logs",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+          "options": {
+            "showTime": true,
+            "showLabels": true,
+            "wrapLogMessage": true,
+            "prettifyLogMessage": true,
+            "sortOrder": "Descending",
+            "enableLogDetails": true
+          },
+          "targets": [
+            {
+              "datasource": { "type": "loki", "uid": "Loki" },
+              "expr": "{container=\"booking-service\"}"
+            }
+          ]
+        }
+      ]
+    }
+
+---
+# 2. System Logs Dashboard
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-system-logs
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  system-logs.json: |
+    {
+      "title": "System Logs",
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "templating": {
+        "list": [
+          {
+            "name": "service",
+            "type": "query",
+            "datasource": { "type": "loki", "uid": "Loki" },
+            "query": "label_values(container)",
+            "multi": true,
+            "includeAll": true,
+            "current": { "text": "All", "value": "$__all" },
+            "refresh": 2
+          },
+          {
+            "name": "level",
+            "type": "query",
+            "datasource": { "type": "loki", "uid": "Loki" },
+            "query": "label_values(level)",
+            "multi": true,
+            "includeAll": true,
+            "current": { "text": "All", "value": "$__all" },
+            "refresh": 2
+          }
+        ]
+      },
+      "panels": [
+        {
+          "title": "Log Volume by Service",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "datasource": { "type": "loki", "uid": "Loki" },
+              "expr": "sum(rate({container=~\"$service\"}[1m])) by (container)"
+            }
+          ]
+        },
+        {
+          "title": "All Logs",
+          "type": "logs",
+          "gridPos": { "h": 16, "w": 24, "x": 0, "y": 8 },
+          "options": {
+            "showTime": true,
+            "showLabels": true,
+            "wrapLogMessage": true,
+            "prettifyLogMessage": true,
+            "sortOrder": "Descending",
+            "enableLogDetails": true
+          },
+          "targets": [
+            {
+              "datasource": { "type": "loki", "uid": "Loki" },
+              "expr": "{container=~\"$service\", level=~\"$level\"}"
+            }
+          ]
+        }
+      ]
+    }
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nodejs-application-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    k8s-sidecar-target-directory: "/tmp/dashboards"
+data:
+  node-js-dashboard.json: |
+    {
+      # ------------------------------------------------------------------------
+      # GRAFANA DASHBOARD METADATA & GLOBALS
+      # ------------------------------------------------------------------------
+      "title": "NodeJS Application Dashboard",
+      "uid": "PTSqcpJWk",
+      "description": "node.js prometheus client basic metrics",
+      "editable": true,
+      "schemaVersion": 42,
+      "style": "dark",
+      "tags": [
+        "nodejs"
+      ],
+      "timezone": "",
+      "time": {
+        "from": "now-1h",
+        "to": "now"
+      },
+
+      # ------------------------------------------------------------------------
+      # GRAFANA ANNOTATIONS (Overlay markers for alerts/events on graphs)
+      # ------------------------------------------------------------------------
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": {
+              "uid": "-- Grafana --"
+            },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+
+      # ------------------------------------------------------------------------
+      # DASHBOARD PANELS
+      # ------------------------------------------------------------------------
+      "panels": [
+
+        # PANEL 1: Process CPU Usage (Timeseries)
+        # Calculates User Space vs System Space CPU utilization % over a 2-minute rate.
+        {
+          "id": 6,
+          "title": "Process CPU Usage",
+          "type": "timeseries",
+          "gridPos": { "h": 7, "w": 10, "x": 0, "y": 0 },
+          "fieldConfig": {
+            "defaults": { "unit": "percent" }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "legendFormat": "User CPU - {{instance}}",
+              "expr": "irate(process_cpu_user_seconds_total{instance=~\"$instance\"}[2m]) * 100"
+            },
+            {
+              "refId": "B",
+              "legendFormat": "Sys CPU - {{instance}}",
+              "expr": "irate(process_cpu_system_seconds_total{instance=~\"$instance\"}[2m]) * 100"
+            }
+          ]
+        },
+
+        # PANEL 2: Event Loop Lag (Timeseries)
+        # Measures delay in Node.js event loop execution in seconds (indicator of CPU blocking).
+        {
+          "id": 8,
+          "title": "Event Loop Lag",
+          "type": "timeseries",
+          "gridPos": { "h": 7, "w": 9, "x": 10, "y": 0 },
+          "fieldConfig": {
+            "defaults": { "unit": "s" }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "legendFormat": "{{instance}}",
+              "expr": "nodejs_eventloop_lag_seconds{instance=~\"$instance\"}"
+            }
+          ]
+        },
+
+        # PANEL 3: Node.js Version (Stat Card)
+        # Displays active Node.js runtime versions reported by client metrics.
+        {
+          "id": 2,
+          "title": "Node.js Version",
+          "type": "stat",
+          "gridPos": { "h": 3, "w": 5, "x": 19, "y": 0 },
+          "options": {
+            "textMode": "name",
+            "colorMode": "none"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "legendFormat": "{{version}}",
+              "expr": "sum(nodejs_version_info{instance=~\"$instance\"}) by (version)"
+            }
+          ]
+        },
+
+        # PANEL 4: Process Restart Times (Stat Card)
+        # Tracks process uptime resets/restarts across instances within a 1-minute window.
+        {
+          "id": 4,
+          "title": "Process Restart Times",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 5, "x": 19, "y": 3 },
+          "targets": [
+            {
+              "refId": "A",
+              "legendFormat": "{{instance}}",
+              "expr": "sum(changes(process_start_time_seconds{instance=~\"$instance\"}[1m]))"
+            }
+          ]
+        },
+
+        # PANEL 5: Process Memory Usage (Timeseries)
+        # Overview of RSS, V8 Heap Total, V8 Heap Used, and External C++ Memory allocations.
+        {
+          "id": 7,
+          "title": "Process Memory Usage",
+          "type": "timeseries",
+          "gridPos": { "h": 7, "w": 16, "x": 0, "y": 7 },
+          "fieldConfig": {
+            "defaults": { "unit": "bytes" }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "legendFormat": "Process Memory - {{instance}}",
+              "expr": "process_resident_memory_bytes{instance=~\"$instance\"}"
+            },
+            {
+              "refId": "B",
+              "legendFormat": "Heap Total - {{instance}}",
+              "expr": "nodejs_heap_size_total_bytes{instance=~\"$instance\"}"
+            },
+            {
+              "refId": "C",
+              "legendFormat": "Heap Used - {{instance}}",
+              "expr": "nodejs_heap_size_used_bytes{instance=~\"$instance\"}"
+            },
+            {
+              "refId": "D",
+              "legendFormat": "External Memory - {{instance}}",
+              "expr": "nodejs_external_memory_bytes{instance=~\"$instance\"}"
+            }
+          ]
+        },
+
+        # PANEL 6: Active Handlers/Requests Total (Timeseries)
+        # Tracks active libuv I/O handles (sockets/files) and pending asynchronous requests.
+        {
+          "id": 9,
+          "title": "Active Handlers/Requests Total",
+          "type": "timeseries",
+          "gridPos": { "h": 7, "w": 8, "x": 16, "y": 7 },
+          "targets": [
+            {
+              "refId": "A",
+              "legendFormat": "Active Handler - {{instance}}",
+              "expr": "nodejs_active_handles_total{instance=~\"$instance\"}"
+            },
+            {
+              "refId": "B",
+              "legendFormat": "Active Request - {{instance}}",
+              "expr": "nodejs_active_requests_total{instance=~\"$instance\"}"
+            }
+          ]
+        },
+
+        # PANEL 7: Heap Total Detail (Timeseries)
+        # Breakdown of allocated V8 heap space by space type (new_space, old_space, code_space, etc.).
+        {
+          "id": 10,
+          "title": "Heap Total Detail",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 14 },
+          "fieldConfig": { "defaults": { "unit": "bytes" } },
+          "targets": [
+            {
+              "refId": "A",
+              "legendFormat": "Heap Total - {{instance}} - {{space}}",
+              "expr": "nodejs_heap_space_size_total_bytes{instance=~\"$instance\"}"
+            }
+          ]
+        },
+
+        # PANEL 8: Heap Used Detail (Timeseries)
+        # Breakdown of actual used V8 heap space across memory spaces.
+        {
+          "id": 11,
+          "title": "Heap Used Detail",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 14 },
+          "fieldConfig": { "defaults": { "unit": "bytes" } },
+          "targets": [
+            {
+              "refId": "A",
+              "legendFormat": "Heap Used - {{instance}} - {{space}}",
+              "expr": "nodejs_heap_space_size_used_bytes{instance=~\"$instance\"}"
+            }
+          ]
+        },
+
+        # PANEL 9: Heap Available Detail (Timeseries)
+        # Unallocated memory available within each V8 heap space.
+        {
+          "id": 12,
+          "title": "Heap Available Detail",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 14 },
+          "fieldConfig": { "defaults": { "unit": "bytes" } },
+          "targets": [
+            {
+              "refId": "A",
+              "legendFormat": "Heap Available - {{instance}} - {{space}}",
+              "expr": "nodejs_heap_space_size_available_bytes{instance=~\"$instance\"}"
+            }
+          ]
+        }
+      ],
+
+      # ------------------------------------------------------------------------
+      # TEMPLATING / DASHBOARD VARIABLES
+      # Dynamic dropdown menu to filter metrics by application instance.
+      # ------------------------------------------------------------------------
+      "templating": {
+        "list": [
+          {
+            "name": "instance",
+            "label": "instance",
+            "type": "query",
+            "datasource": "PBFA97CFB590B2093",
+            "query": "label_values(nodejs_version_info, instance)",
+            "definition": "label_values(nodejs_version_info, instance)",
+            "includeAll": true,
+            "multi": true,
+            "refresh": 1
+          }
+        ]
+      }
+    }
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logs-app-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    k8s-sidecar-target-directory: "/tmp/dashboards"
+data:
+  logs-app-dashboard.json: |
+    {
+        "annotations": {
+          "list": [
+            {
+              "$$hashKey": "object:75",
+              "builtIn": 1,
+              "datasource": {
+                "uid": "-- Grafana --"
+              },
+              "enable": true,
+              "hide": true,
+              "iconColor": "rgba(0, 211, 255, 1)",
+              "name": "Annotations & Alerts",
+              "type": "dashboard"
+            }
+          ]
+        },
+        "description": "Log Viewer Dashboard for Loki",
+        "editable": true,
+        "fiscalYearStartMonth": 0,
+        "graphTooltip": 0,
+        "id": 0,
+        "links": [
+          {
+            "$$hashKey": "object:59",
+            "icon": "bolt",
+            "includeVars": true,
+            "keepTime": true,
+            "tags": [],
+            "targetBlank": true,
+            "title": "View In Explore",
+            "type": "link",
+            "url": "/explore?orgId=1&left=[\"now-1h\",\"now\",\"Loki\",{\"expr\":\"{job=\\\"$app\\\"}\"},{\"ui\":[true,true,true,\"none\"]}]"
+          },
+          {
+            "$$hashKey": "object:61",
+            "icon": "external link",
+            "tags": [],
+            "targetBlank": true,
+            "title": "Learn LogQL",
+            "type": "link",
+            "url": "https://grafana.com/docs/loki/latest/logql/"
+          }
+        ],
+        "panels": [
+          {
+            "datasource": {
+              "type": "loki",
+              "uid": "P8E80F9AEF21F6940"
+            },
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "hidden",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "bars",
+                  "fillOpacity": 100,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 1,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "never",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "links": [],
+                "mappings": [],
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "gridPos": {
+              "h": 3,
+              "w": 24,
+              "x": 0,
+              "y": 0
+            },
+            "id": 6,
+            "options": {
+              "legend": {
+                "calcs": [],
+                "displayMode": "list",
+                "placement": "bottom",
+                "showLegend": false
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "none"
+              }
+            },
+            "pluginVersion": "12.3.1",
+            "targets": [
+              {
+                "datasource": {
+                  "type": "loki",
+                  "uid": "P8E80F9AEF21F6940"
+                },
+                "direction": "backward",
+                "editorMode": "code",
+                "expr": "sum(count_over_time({container=~\"$app\"}[$__interval]))",
+                "legendFormat": "",
+                "queryType": "range",
+                "refId": "A"
+              }
+            ],
+            "title": "",
+            "type": "timeseries"
+          },
+          {
+            "datasource": {
+              "type": "loki",
+              "uid": "P8E80F9AEF21F6940"
+            },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
+            "gridPos": {
+              "h": 25,
+              "w": 24,
+              "x": 0,
+              "y": 3
+            },
+            "id": 2,
+            "maxDataPoints": "",
+            "options": {
+              "dedupStrategy": "none",
+              "enableInfiniteScrolling": false,
+              "enableLogDetails": true,
+              "showControls": false,
+              "showLabels": false,
+              "showTime": true,
+              "sortOrder": "Descending",
+              "wrapLogMessage": false
+            },
+            "pluginVersion": "12.3.1",
+            "targets": [
+              {
+                "datasource": {
+                  "type": "loki",
+                  "uid": "P8E80F9AEF21F6940"
+                },
+                "direction": "backward",
+                "editorMode": "code",
+                "expr": "{container=~\"$app\"} |= \"$search\" | logfmt",
+                "hide": false,
+                "legendFormat": "",
+                "queryType": "range",
+                "refId": "A"
+              }
+            ],
+            "title": "",
+            "transparent": true,
+            "type": "logs"
+          }
+        ],
+        "preload": false,
+        "refresh": "",
+        "schemaVersion": 42,
+        "tags": [],
+        "templating": {
+          "list": [
+            {
+              "current": {
+                "text": "auth-service",
+                "value": "auth-service"
+              },
+              "datasource": "P8E80F9AEF21F6940",
+              "definition": "",
+              "includeAll": false,
+              "label": "App",
+              "name": "app",
+              "options": [],
+              "query": {
+                "label": "container",
+                "refId": "LokiVariableQueryEditor-VariableQuery",
+                "stream": "",
+                "type": 1
+              },
+              "refresh": 1,
+              "regex": "",
+              "type": "query"
+            },
+            {
+              "current": {
+                "text": "",
+                "value": ""
+              },
+              "label": "String Match",
+              "name": "search",
+              "options": [
+                {
+                  "selected": true,
+                  "text": "",
+                  "value": ""
+                }
+              ],
+              "query": "",
+              "type": "textbox"
+            }
+          ]
+        },
+        "time": {
+          "from": "now-12h",
+          "to": "now"
+        },
+        "timepicker": {
+          "refresh_intervals": [
+            "10s",
+            "30s",
+            "1m",
+            "5m",
+            "15m",
+            "30m",
+            "1h",
+            "2h",
+            "1d"
+          ]
+        },
+        "timezone": "",
+        "title": "Logs / App",
+        "uid": "sadlil-loki-apps-dashboard",
+        "version": 4
+    }

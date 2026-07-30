@@ -1,0 +1,85 @@
+# k8s/observability/alloy/alloy-values.yaml
+
+alloy:
+  mounts:
+    varlog: true
+
+  configMap:
+    create: true
+    content: |
+      // 1. Define destination (Loki K8s Service)
+      loki.write "default" {
+        endpoint {
+          url = "http://loki.observability.svc.cluster.local:3100/loki/api/v1/push"
+        }
+      }
+
+      // 2. Discover log files directly from the node filesystem
+      local.file_match "pod_logs" {
+        path_targets = [{
+          __path__ = "/var/log/pods/*/*/*.log",
+        }]
+      }
+
+      // 3. Extract metadata (namespace, pod, container) from the file path
+      // Path format: /var/log/pods/<namespace>_<pod_name>_<pod_uid>/<container_name>/*.log
+      discovery.relabel "pod_logs" {
+        targets = local.file_match.pod_logs.targets
+
+        // Extract Namespace (first segment before underscore)
+        rule {
+          source_labels = ["__path__"]
+          regex         = "^/var/log/pods/([^_]+)_.*"
+          target_label  = "namespace"
+        }
+
+        // Extract Pod Name (second segment between underscores)
+        rule {
+          source_labels = ["__path__"]
+          regex         = "^/var/log/pods/[^_]+_([^_]+)_.*"
+          target_label  = "pod"
+        }
+
+        // Extract Container Name (directory name inside pod folder)
+        rule {
+          source_labels = ["__path__"]
+          regex         = "^/var/log/pods/[^_]+_[^_]+_[^/]+/([^/]+)/.*"
+          target_label  = "container"
+        }
+      }
+
+      // 4. Tail the discovered log files
+      loki.source.file "pod_logs" {
+        targets    = discovery.relabel.pod_logs.output
+        forward_to = [loki.process.logs_processor.receiver]
+      }
+
+      // 5. Process Pino JSON logs
+      loki.process "logs_processor" {
+        stage.json {
+          expressions = {
+            level        = "level",
+            service_name = "name",
+            ts           = "time",
+          }
+        }
+
+        stage.template {
+          source   = "level_text"
+          template = `{{ if eq .level "10" }}trace{{ else if eq .level "20" }}debug{{ else if eq .level "30" }}info{{ else if eq .level "40" }}warning{{ else if eq .level "50" }}error{{ else if eq .level "60" }}critical{{ else if eq .level "" }}unknown{{ else }}info{{ end }}`
+        }
+
+        stage.timestamp {
+          source = "ts"
+          format = "UnixMs"
+        }
+
+        stage.labels {
+          values = {
+            "level"        = "level_text",
+            "service_name" = "service_name",
+          }
+        }
+
+        forward_to = [loki.write.default.receiver]
+      }
