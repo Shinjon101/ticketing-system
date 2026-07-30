@@ -1,0 +1,16 @@
+grafana:
+  enabled: false  
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: { cpu: 25m, memory: 32Mi }
+
+prometheus:
+  prometheusSpec:
+    retention: 3d
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+    serviceMonitorSelectorNilUsesHelmValues: false  # without it, ServiceMonitorsre ignored
+    podMonitorSelectorNilUsesHelmValues: false

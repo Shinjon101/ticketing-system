@@ -1,0 +1,22 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ticketing-services
+  namespace: observability
+spec:
+  namespaceSelector:
+    matchNames: ["default"]
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - auth-service
+          - event-service
+          - booking-service
+          - inventory-service
+          - payment-service
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
