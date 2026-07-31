@@ -277,6 +277,9 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
+      '@testcontainers/postgresql':
+        specifier: ^12.0.4
+        version: 12.0.4
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6
@@ -298,6 +301,9 @@ importers:
       typescript:
         specifier: ^5.8.0
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@22.19.17)(@vitest/ui@2.1.9)(lightningcss@1.32.0)
 
   services/inventory-service:
     dependencies:
