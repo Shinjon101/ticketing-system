@@ -70,6 +70,9 @@ jobs:
       - name: Run payment-service unit tests
         run: pnpm --filter @ticketing/payment-service test
 
+      - name: Run event-service unit tests
+        run: pnpm --filter @ticketing/event-service test  
+
       #Integration tests via Testcontainers.
 
       - name: Run inventory-service integration tests
@@ -81,7 +84,8 @@ jobs:
       - name: Run payment-service integration tests
         run: pnpm --filter @ticketing/payment-service test:integration
 
-  #NOTE: event-service has no test suite yet (typecheck only)
+      - name: Run event-service integration tests
+        run: pnpm --filter @ticketing/event-service test:integration
 
   docker:
     name: Docker build (${{matrix.service}})
