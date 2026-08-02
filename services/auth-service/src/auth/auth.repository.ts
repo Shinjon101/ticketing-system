@@ -43,16 +43,4 @@ export const authRepository = {
   deleteExpired: async (before: Date): Promise<void> => {
     await db.delete(refreshTokens).where(lt(refreshTokens.expiresAt, before));
   },
-
-  updateRole: async (
-    id: string,
-    role: "user" | "admin",
-  ): Promise<User | undefined> => {
-    const [updated] = await db
-      .update(users)
-      .set({ role, updatedAt: new Date() })
-      .where(eq(users.id, id))
-      .returning();
-    return updated;
-  },
 };
