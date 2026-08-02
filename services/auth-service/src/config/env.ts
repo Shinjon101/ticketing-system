@@ -21,6 +21,9 @@ export const envScham = z.object({
   LOG_LEVEL: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal"])
     .default("info"),
+
+  ADMIN_EMAIL: z.email().optional(),
+  ADMIN_PASSWORD: z.string().min(8).optional(),
 });
 
 type EnvType = z.infer<typeof envScham>;

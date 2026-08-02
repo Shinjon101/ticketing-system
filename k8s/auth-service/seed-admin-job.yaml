@@ -1,0 +1,16 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: auth-service-seed-admin
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: seed-admin
+          image: auth-service:local
+          command: ["node", "dist/db/seed-admin.js"]
+          envFrom:
+            - secretRef: { name: auth-service-secrets }

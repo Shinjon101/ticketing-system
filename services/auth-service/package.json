@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "db:seed-admin": "tsx src/db/seed-admin.ts"
   },
   "dependencies": {
     "@ticketing/common": "workspace:*",
