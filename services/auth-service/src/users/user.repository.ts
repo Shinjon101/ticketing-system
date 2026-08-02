@@ -34,4 +34,16 @@ export const userRepository = {
 
     return user!;
   },
+
+  updateRole: async (
+    id: string,
+    role: "user" | "admin",
+  ): Promise<User | undefined> => {
+    const [updated] = await db
+      .update(users)
+      .set({ role, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return updated;
+  },
 };

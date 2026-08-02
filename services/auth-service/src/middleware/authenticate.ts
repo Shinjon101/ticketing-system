@@ -42,3 +42,13 @@ export const autheticate = (
     }
   }
 };
+
+export const requireRole = (role: "user" | "admin") => {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    if (req.user.role !== role) {
+      next(new HttpError(403, "Insufficient permissions"));
+      return;
+    }
+    next();
+  };
+};
