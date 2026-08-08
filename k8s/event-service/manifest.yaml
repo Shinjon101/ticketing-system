@@ -32,7 +32,8 @@ spec:
     spec:
       containers:
         - name: event-service
-          image: event-service:local
+          image: ghcr.io/shinjon101/ticketing-event-service:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 4004
           envFrom:

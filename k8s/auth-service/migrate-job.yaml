@@ -10,7 +10,8 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: auth-service:local
+          image: ghcr.io/shinjon101/ticketing-auth-service:latest
+          imagePullPolicy: Always
           command: ["node", "dist/db/migrate.js"]
           envFrom:
             - secretRef: { name: auth-service-secrets }

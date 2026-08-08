@@ -32,7 +32,8 @@ spec:
     spec:
       containers:
         - name: auth-service
-          image: auth-service:local
+          image: ghcr.io/shinjon101/ticketing-auth-service:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 4003
           envFrom:

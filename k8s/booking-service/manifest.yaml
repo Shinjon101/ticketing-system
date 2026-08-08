@@ -31,8 +31,8 @@ spec:
     spec:
       containers:
         - name: booking-service
-          image: booking-service:local
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/shinjon101/ticketing-booking-service:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 4005
           envFrom:

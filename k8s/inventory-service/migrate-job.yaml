@@ -10,7 +10,8 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: inventory-service:local
+          image: ghcr.io/shinjon101/ticketing-inventory-service:latest
+          imagePullPolicy: Always
           command: ["node", "dist/db/migrate.js"]
           envFrom:
             - secretRef: { name: inventory-service-secrets }

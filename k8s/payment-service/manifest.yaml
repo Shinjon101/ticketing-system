@@ -31,8 +31,8 @@ spec:
     spec:
       containers:
         - name: payment-service
-          image: payment-service:local
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/shinjon101/ticketing-payment-service:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 4007
           envFrom:

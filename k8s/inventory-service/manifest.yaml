@@ -34,8 +34,8 @@ spec:
     spec:
       containers:
         - name: inventory-service
-          image: inventory-service:local
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/shinjon101/ticketing-inventory-service:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 4006
           envFrom:
