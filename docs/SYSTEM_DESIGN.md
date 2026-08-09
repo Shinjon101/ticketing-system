@@ -1,8 +1,8 @@
 # Ticketing System - System Design Document
 
-**Status:** V2  
+**Status:** V3
 **Goal:** Learn system design/tradeoffs, microservices systems, DevOps concepts, observability/monitoring, following best practices
-**Last updated:** 12th July, 2026.
+**Last updated:** 9th August, 2026.
 
 ---
 
@@ -74,15 +74,14 @@ For now, Users do not pick a specific seat. They request "X seats for event Y" a
 - PostgreSQL (one database per service)
 - Redis (idempotency, event cache, availability counter)
 - Docker + Kubernetes (local with Kind)
-- CI/CD (GitHub Actions)
-- Observability (Prometheus + Grafana + structured logs)
+- API Gateway (K8s Gateway API replacing legacy Ingress)
+- CI/CD (GitHub Actions + GHCR image publishing)
+- Observability (kube-prometheus-stack, Grafana Alloy, Loki via Helm)
 
 ### To add later
 
-- Kubernetes (kubectl and with either kind or minikube)
-- API Gateway (through Ingress most likely, not separate node app, as auth middleware exists per service which would be good reason to have a separate node service for this)
 - Notification Service
-- AWS deployment + Terraform (Finding best way to demo its deployment at minimal cost, will learn how to write terraform to provision proper infra for its deployment which will not be used live due to budget restraints )
+- AWS deployment + Terraform (Finding best way to demo its deployment at minimal cost, will learn how to write terraform to provision proper infra for its deployment which will not be used live due to budget restraints)
 
 ---
 
@@ -94,22 +93,22 @@ For now, Users do not pick a specific seat. They request "X seats for event Y" a
 
 ### Technology stack
 
-| Concern          | Technology                              | Reason                                                                                     |
-| ---------------- | --------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Runtime          | Node.js + TypeScript                    | Async I/O suits event-driven architecture                                                  |
-| Framework        | Express                                 | Familiar, industry standard                                                                |
-| ORM              | Drizzle ORM                             | Lightweight, type-safe, raw SQL access when needed                                         |
-| Database         | PostgreSQL 16                           | ACID guarantees, `FOR UPDATE SKIP LOCKED` row-level locking                                |
-| Message broker   | Apache Kafka                            | Durable, replayable, consumer group semantics                                              |
-| Cache            | Redis 7                                 | Fast in-memory ops, TTL support, atomic NX ops                                             |
-| Containerisation | Docker (multi-stage builds)             | Reproducible environments                                                                  |
-| Orchestration    | Kubernetes via Kind or minikube (local) | Industry standard, horizontal scaling                                                      |
-| CI/CD            | GitHub Actions                          | Integrated with repo                                                                       |
-| Logging          | Pino                                    | Structured JSON logging for traceability                                                   |
-| Load testing     | k6                                      | Scriptable, handles 1000+ virtual users                                                    |
-| Monitoring       | Grafana                                 | cost effective, centralized monitoring, customizeable                                      |
-| Metrics          | Prometheus                              | Native Insights into Node.js Internals, custom metrics                                     |
-| Log collection   | Loki + Alloy                            | Maximizes Node.js Event Loop Performance, Dynamic Labeling, Handles pino's json logs great |
+| Concern          | Technology                  | Reason                                                                                     |
+| ---------------- | --------------------------- | ------------------------------------------------------------------------------------------ |
+| Runtime          | Node.js + TypeScript        | Async I/O suits event-driven architecture                                                  |
+| Framework        | Express                     | Familiar, industry standard                                                                |
+| ORM              | Drizzle ORM                 | Lightweight, type-safe, raw SQL access when needed                                         |
+| Database         | PostgreSQL 16               | ACID guarantees, `FOR UPDATE SKIP LOCKED` row-level locking                                |
+| Message broker   | Apache Kafka                | Durable, replayable, consumer group semantics                                              |
+| Cache            | Redis 7                     | Fast in-memory ops, TTL support, atomic NX ops                                             |
+| Containerisation | Docker (multi-stage builds) | Reproducible environments                                                                  |
+| Orchestration    | Kubernetes via Kind         | Industry standard, horizontal scaling                                                      |
+| CI/CD            | GitHub Actions              | Integrated with repo                                                                       |
+| Logging          | Pino                        | Structured JSON logging for traceability                                                   |
+| Load testing     | k6                          | Scriptable, handles 1000+ virtual users                                                    |
+| Monitoring       | Grafana                     | cost effective, centralized monitoring, customizeable                                      |
+| Metrics          | Prometheus                  | Native Insights into Node.js Internals, custom metrics                                     |
+| Log collection   | Loki + Alloy                | Maximizes Node.js Event Loop Performance, Dynamic Labeling, Handles pino's json logs great |
 
 ---
 
@@ -1047,17 +1046,26 @@ pnpm run dev --filter=*
 
 Each service builds via a 4-stage Dockerfile: `base` (pnpm via corepack) → `dependencies` (workspace install, cached layer) → `builder` (esbuild bundle per service + `pnpm deploy --prod` to isolate runtime deps) → `runner` (minimal `node:22-alpine`, non-root user, `tini` as PID 1, `HEALTHCHECK` against `/health`).
 
-Lean, explicit Dockerfiles are used per service rather than one parameterized `ARG`-templated Dockerfile — deliberate tradeoff favoring clarity over DRY-ness for a 5-service system (see project preferences).
+Lean, explicit Dockerfiles are used per service rather than one parameterized `ARG`-templated Dockerfile deliberate tradeoff favoring clarity over DRY-ness for a 5-service system (see project preferences).
 
 ### docker-compose (current local orchestration)
 
 Five Postgres instances (one per service, ports 5432–5436), Redis, single-node Kafka (KRaft mode, no Zookeeper), Kafka UI, plus the full observability stack (§14). All 5 application services build and run from `docker-compose.yaml`.
 
-### Kubernetes - local
+### Kubernetes (local, Kind)
 
-```
-YET TO BE DONE as of, 12th July 2026
-```
+The system runs locally on a **Kind k8s cluster** (Kubernetes inside Docker)
+
+**_All Kubernetes yaml files can be found in_** `k8s/`
+
+- Each Service and its DB (headless services + statefullset) has its own manifest, config and secrets (not committed ofc)
+- Redis and Kafka have thier own manifests and configs
+- We use the modern **K8s Gateway API** to route traffic into the cluster, shifting away from legacy **K8s Ingress** for better sepeartion of concern, as gateway controller config is in `gateway.yaml` and http routes for the gateway are in `http-routes.yaml`
+- We use `cloud-provider-kind` to dynamically provision local LoadBalancer, enabling access from the host machine to the gateway API routing without manual port forwarding for application traffic.
+- Observability stack is deployed via **Helm** into dedicated `observability` namespace This includes the `kube-prometheus-stack` (Prometheus, Grafana, Alertmanager), Loki, and Grafana Alloy. Local access to infrastructure UIs is handled securely via `kubectl port-forward` (e.g., port `9090` for Prometheus, port `3000` for Grafana) rather than exposing them through the public Gateway.
+- Building and pushing public Docker images of the 5 services directly to GitHub Container Registry (GHCR) via GitHub Actions. The Kubernetes manifests of these services pull these public images directly using `imagePullPolicy: Always` to ensure the latest dynamic tags are fetched on pod restarts without needing explicit image pull secrets.
+
+  Example URI: `ghcr.io/shinjon101/ticketing-booking-service:latest`
 
 ## 15. CI/CD: GitHub Actions
 
@@ -1067,20 +1075,17 @@ Current pipeline (`.github/workflows/ci.yaml`):
 validate job:
   1. Install deps, build shared packages (common, db, kafka-client)
   2. Typecheck all 5 services
-  3. Unit tests: auth, inventory, booking, payment services
-  4. Integration tests (Testcontainers — real Postgres): inventory, booking, payment services
+  3. Unit tests: auth, inventory, booking, event, payment services
+  4. Integration tests (Testcontainers): inventory, booking, event, payment services
 
 docker job (needs: validate):
-  5. Docker build for all 5 services (no push yet — build-only, cache via GHA)
+  5. Docker build for all 5 services in parallel (matrix) and push public images to GHCR, with proper image tagging.
 
 ```
-
-**Known gap:** event-service has no test suite yet, has typecheck only. Tracked in the CI file as a comment. inventory-service integration tests exist for `seat.repository` but not for the full Kafka consumer flow.
 
 **Planned but not yet added:**
 
 - ESLint step (referenced in `package.json` scripts but not wired into CI)
-- Docker push + tag with commit SHA on merge to `main`
 - Full end-to-end test (booking → seat hold → payment → confirmed) against a running docker-compose stack
 
 ---
@@ -1146,7 +1151,7 @@ Early in observability setup, app logs weren't appearing in Grafana at all. Root
 
 ---
 
-## 17. Load Testing (not done yet as of 12th July, 2026)
+## 17. Load Testing (not done yet as of 9th August, 2026 : added to immediate next step)
 
 Tool to be used : k6
 
@@ -1198,5 +1203,4 @@ Tool to be used : k6
 
 ### Immediate next steps
 
-1.  **Kubernetes setup**
-2.  **Test gaps**: event-service test suite (currently typecheck-only)
+1.  **End-to-End Load Testing**: Implement k6 load testing scripts to validate the 1,000+ concurrent user metric against the kind cluster.
