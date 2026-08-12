@@ -15,8 +15,8 @@ if (!connectionString) {
 }
 
 if (!adminEmail || !adminPassword) {
-  console.log("ADMIN_EMAIL/ADMIN_PASSWORD not set");
-  process.exit(0);
+  console.error("ADMIN_EMAIL/ADMIN_PASSWORD not set");
+  process.exit(1);
 }
 
 const pool = new Pool({ connectionString });

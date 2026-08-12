@@ -19,3 +19,8 @@ await build({
   entryPoints: ["src/db/migrate.ts"],
   outfile: "dist/db/migrate.js",
 });
+await build({
+  ...common,
+  entryPoints: ["src/db/seed-admin.ts"],
+  outfile: "dist/db/seed-admin.js",
+});
