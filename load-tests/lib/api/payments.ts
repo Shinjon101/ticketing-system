@@ -1,30 +1,42 @@
 import http from "k6/http";
 import { check } from "k6";
-import crypto from "k6/crypto";
-import { uuidv4 } from "https://jslib.k6.io/uuid/4.4.2/index.js";
-import { authHeaders } from "../../config/headers.js";
-import { BASE_URL } from "../../config/config.js";
+import k6crypto from "k6/crypto";
+import { authHeaders } from "../../config/headers.ts";
+import { BASE_URL } from "../../config/config.ts";
 
-export const createOrder = (token, bookingId) => {
+export interface OrderResult {
+  orderId: string;
+  amount: number;
+  currency: string;
+  keyId: string;
+}
+
+export function createOrder(
+  token: string,
+  bookingId: string,
+): OrderResult | null {
   const res = http.post(
     `${BASE_URL}/payments/orders`,
     JSON.stringify({ bookingId }),
     { headers: authHeaders(token) },
   );
+
   const ok = check(res, {
     "createOrder: 201 Created": (r) => r.status === 201,
   });
 
-  if (!ok) return null;
+  return ok ? (res.json() as unknown as OrderResult) : null;
+}
 
-  return JSON.parse(res.body);
-};
-
-export const verifyPayment = (token, bookingId, razorpayOrderId, keySecret) => {
-  const razorpayPaymentId = `pay_${uuidv4().replace(/-/g, "").substring(0, 14)}`;
-
+export function verifyPayment(
+  token: string,
+  bookingId: string,
+  razorpayOrderId: string,
+  keySecret: string,
+): boolean {
+  const razorpayPaymentId = `pay_${crypto.randomUUID().replace(/-/g, "").substring(0, 14)}`;
   const signatureInput = `${razorpayOrderId}|${razorpayPaymentId}`;
-  const razorpaySignature = crypto.hmac(
+  const razorpaySignature = k6crypto.hmac(
     "sha256",
     keySecret,
     signatureInput,
@@ -42,9 +54,7 @@ export const verifyPayment = (token, bookingId, razorpayOrderId, keySecret) => {
     { headers: authHeaders(token) },
   );
 
-  const ok = check(res, {
+  return check(res, {
     "verifyPayment: 200 OK": (r) => r.status === 200,
   });
-
-  return ok;
-};
+}
