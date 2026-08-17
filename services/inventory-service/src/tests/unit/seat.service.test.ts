@@ -11,6 +11,16 @@ vi.mock("@/redis/seat-counter", () => ({
   },
 }));
 
+vi.mock("@/redis/index", () => ({
+  redis: {
+    set: vi.fn(),
+    setnx: vi.fn(),
+    get: vi.fn(),
+    decr: vi.fn(),
+    incr: vi.fn(),
+  },
+}));
+
 vi.mock("@/db", () => ({
   db: { transaction: vi.fn((cb: any) => cb({})) },
 }));

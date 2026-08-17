@@ -4,7 +4,7 @@ const key = (eventId: string) => `seats:available:${eventId}`;
 
 export const seatsCounter = {
   seed: async (eventId: string, totalSeats: number): Promise<void> => {
-    await redis.setnx(key(eventId), totalSeats);
+    await redis.set(key(eventId), totalSeats);
   },
 
   decrement: async (eventId: string): Promise<void> => {
