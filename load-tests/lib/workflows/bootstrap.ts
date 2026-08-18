@@ -23,11 +23,11 @@ export const setupTest = (config: Config) => {
   const eventId = event.id;
   logger.info(`Event created & activated:  ${eventId}`);
 
-  /*   logger.info("Waiting for Inventory service to seed seats via Kafka...");
+  logger.info("Waiting for Inventory service to seed seats via Kafka...");
   const inventorySync = pollUntil(
     () => getAvailableSeats(eventId),
     (seats) => seats === config.totalSeats,
-    60_000, //30s timeout
+    30_000, //30s timeout
     1_000, // 1s poll interval
   );
 
@@ -37,26 +37,9 @@ export const setupTest = (config: Config) => {
     );
   }
 
-  logger.info(`Inventory seeded exactly ${config.totalSeats} seats.`); */
+  logger.info(`Inventory seeded exactly ${config.totalSeats} seats.`);
 
-  logger.info(
-    "Waiting 30 seconds for Inventory service to seed seats via Kafka...",
-  );
-  sleep(30);
-
-  logger.info(`Probing Booking Service cache...`);
-  const cacheWarmup = pollUntil(
-    () => createBooking(adminToken, eventId, crypto.randomUUID(), 1),
-    (res) => res !== null, // createBooking returns null on failure
-    30_000,
-    1_000,
-  );
-
-  if (cacheWarmup.timedOut) {
-    throw new Error(`Booking service cache never warmed up for ${eventId}`);
-  }
-
-  logger.info(`Booking pipeline ready.`);
+  sleep(2);
 
   logger.info(`Registering pool of ${config.userPoolSize} concurrent users...`);
   const userTokens = [];
