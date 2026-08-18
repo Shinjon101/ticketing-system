@@ -14,3 +14,4 @@ prometheus:
       limits: { cpu: 500m, memory: 512Mi }
     serviceMonitorSelectorNilUsesHelmValues: false  # without it, ServiceMonitorsre ignored
     podMonitorSelectorNilUsesHelmValues: false
+    enableRemoteWriteReceiver: true
