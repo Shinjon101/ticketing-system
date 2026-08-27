@@ -6,6 +6,7 @@ import { fail } from "k6";
 import { pollUntil } from "../lib/utils/polling.ts";
 import { createOrder, verifyPayment } from "../lib/api/payments.ts";
 import { RAZORPAY_KEY_SECRET } from "../config/config.ts";
+import { sagaResolutionTrend } from "../lib/utils/metrics.ts";
 
 export const options = smokeProfile;
 
@@ -20,6 +21,8 @@ export default function (data: { eventId: string; userTokens: string[] }) {
   const bookingRes = createBooking(token, data.eventId, idempotencyKey, 1);
   if (!bookingRes) fail("Booking creation failed - API returned null");
 
+  const start = Date.now();
+
   const bookingId = bookingRes.booking.id;
 
   const pollResult = pollUntil(
@@ -28,6 +31,8 @@ export default function (data: { eventId: string; userTokens: string[] }) {
     10_000, // 10 second timeout for the smoke test
     1_000, // 1 second interval
   );
+
+  sagaResolutionTrend.add(Date.now() - start);
 
   if (pollResult.timedOut) {
     fail(

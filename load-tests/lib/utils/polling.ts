@@ -3,11 +3,7 @@ import {
   BOOKING_POLL_TIMEOUT_MS,
   BOOKING_POLL_INTERVAL_MS,
 } from "../../config/config.ts";
-
-export interface BookingLike {
-  status?: string | null;
-  [key: string]: unknown;
-}
+import { Booking } from "../api/bookings.ts";
 
 export const pollUntil = <T>(
   fetchFn: () => T | null,
@@ -33,13 +29,13 @@ export const pollUntil = <T>(
 const TERMINAL_STATES = new Set(["confirmed", "failed", "cancelled"]);
 
 export function isBookingTerminal(
-  booking: BookingLike | null | undefined,
+  booking: Booking | null | undefined,
 ): boolean {
   return TERMINAL_STATES.has(booking?.status ?? "");
 }
 
 export function isSeatHeldOrTerminal(
-  booking: BookingLike | null | undefined,
+  booking: Booking | null | undefined,
 ): boolean {
   return booking?.status === "seat_held" || isBookingTerminal(booking);
 }
