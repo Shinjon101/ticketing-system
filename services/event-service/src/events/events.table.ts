@@ -39,6 +39,8 @@ export const events = pgTable("evemts", {
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+
+  version: integer("version").notNull().default(0),
 });
 
 export type Event = typeof events.$inferSelect;

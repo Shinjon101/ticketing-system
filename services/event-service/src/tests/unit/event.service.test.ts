@@ -47,6 +47,7 @@ const makeEvent = (overrides: Partial<Event> = {}): Event => ({
   createdBy: randomUUID(),
   createdAt: new Date(),
   updatedAt: new Date(),
+  version: 0,
   ...overrides,
 });
 
@@ -128,6 +129,7 @@ describe("eventService.create", () => {
         topic: TOPICS.EVENT_CREATED,
         payload: expect.objectContaining({
           eventId: created.id,
+          version: created.version,
           totalSeats: created.totalSeats,
           price: created.price,
         }),
@@ -157,7 +159,7 @@ describe("eventService.update", () => {
     expect(outboxRepository.createWithTx).not.toHaveBeenCalled();
   });
 
-  it("updates the event and queues an EVENT_UPDATED outbox row with just the changed fields", async () => {
+  it("updates the event and queues an EVENT_UPDATED outbox row with a full snapshot", async () => {
     const existing = makeEvent({ status: "draft" });
     const updated = { ...existing, title: "New title" };
     vi.mocked(eventsRepository.findById).mockResolvedValue(existing);
@@ -174,7 +176,13 @@ describe("eventService.update", () => {
         topic: TOPICS.EVENT_UPDATED,
         payload: expect.objectContaining({
           eventId: existing.id,
-          changes: { title: "New title" },
+          version: updated.version,
+          title: updated.title,
+          totalSeats: updated.totalSeats,
+          price: updated.price,
+          eventDate: updated.eventDate.toISOString(),
+          status: updated.status,
+          saleStartsAt: null,
         }),
       }),
     );
@@ -204,7 +212,9 @@ describe("eventService.cancel", () => {
 
   it("sets status to cancelled and queues EVENT_UPDATED so Booking Service can react", async () => {
     const existing = makeEvent({ status: "active" });
+    const updated = { ...existing, status: "cancelled" as const };
     vi.mocked(eventsRepository.findById).mockResolvedValue(existing);
+    vi.mocked(eventsRepository.updateWithTx).mockResolvedValue(updated);
 
     await eventService.cancel(existing.id);
 
@@ -218,7 +228,14 @@ describe("eventService.cancel", () => {
       expect.objectContaining({
         topic: TOPICS.EVENT_UPDATED,
         payload: expect.objectContaining({
-          changes: { status: "cancelled" },
+          eventId: existing.id,
+          version: updated.version,
+          title: updated.title,
+          totalSeats: updated.totalSeats,
+          price: updated.price,
+          eventDate: updated.eventDate.toISOString(),
+          status: updated.status,
+          saleStartsAt: null,
         }),
       }),
     );

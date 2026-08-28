@@ -6,6 +6,17 @@ import { outboxRepository } from "@/outbox/outbox.repository";
 import { TOPICS } from "@ticketing/kafka-client";
 import { eventsCache } from "./events.cache";
 
+const eventUpdatedPayload = (event: Event) => ({
+  eventId: event.id,
+  version: event.version,
+  title: event.title,
+  totalSeats: event.totalSeats,
+  price: event.price,
+  eventDate: event.eventDate.toISOString(),
+  status: event.status,
+  saleStartsAt: event.saleStartsAt?.toISOString() ?? null,
+});
+
 export interface CreateEventInput {
   title: string;
   description?: string;
@@ -62,6 +73,7 @@ export const eventService = {
         payload: {
           messageId: crypto.randomUUID(),
           eventId: created.id,
+          version: created.version,
           title: created.title,
           totalSeats: created.totalSeats,
           price: created.price,
@@ -98,8 +110,7 @@ export const eventService = {
         topic: TOPICS.EVENT_UPDATED,
         payload: {
           messageId: crypto.randomUUID(),
-          eventId: id,
-          changes: input,
+          ...eventUpdatedPayload(updated),
         },
       });
     });
@@ -108,9 +119,8 @@ export const eventService = {
     return updated;
   },
 
-  /* Cancel is treated as a special case of update Booking Service gets
-  an event.updated message with status: "cancelled" and can
-  invalidate its Redis cache and reject new bookings immediately. */
+  /* Cancellation publishes a versioned tombstone so stale updates cannot
+    recreate an active cache entry. */
 
   cancel: async (id: string): Promise<void> => {
     const existing = await eventsRepository.findById(id);
@@ -119,17 +129,20 @@ export const eventService = {
       throw new HttpError(400, "Event is already cancelled");
     }
 
+    let updated!: Event;
+
     await db.transaction(async (tx) => {
-      await eventsRepository.updateWithTx(tx as typeof db, id, {
+      const result = await eventsRepository.updateWithTx(tx as typeof db, id, {
         status: "cancelled",
       });
+      if (!result) throw new HttpError(404, "Event not found");
+      updated = result;
 
       await outboxRepository.createWithTx(tx as typeof db, {
         topic: TOPICS.EVENT_UPDATED,
         payload: {
           messageId: crypto.randomUUID(),
-          eventId: id,
-          changes: { status: "cancelled" },
+          ...eventUpdatedPayload(updated),
         },
       });
     });

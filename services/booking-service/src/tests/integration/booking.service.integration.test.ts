@@ -40,7 +40,8 @@ describe("bookingService.create: concurrent duplicate submissions", () => {
       price: 5000,
       totalSeats: 10,
       eventDate: new Date(Date.now() + 86_400_000).toISOString(),
-      saleStartsAt: new Date(Date.now() - 1000),
+      saleStartsAt: new Date(Date.now() - 1000).toISOString(),
+      version: 0,
       status: "active",
     });
 

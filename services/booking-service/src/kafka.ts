@@ -38,23 +38,7 @@ export const startKafkaConsumer = async (): Promise<() => Promise<void>> => {
     },
 
     [TOPICS.EVENT_UPDATED]: async (msg: EventUpdated) => {
-      if (msg.changes.status === "cancelled") {
-        await eventCache.del(msg.eventId);
-      } else {
-        const cachedEvent = await eventCache.get(msg.eventId);
-        if (cachedEvent) {
-          await eventCache.set({
-            ...cachedEvent,
-            messageId: msg.messageId,
-            title: msg.changes.title ?? cachedEvent.title,
-            price: msg.changes.price ?? cachedEvent.price,
-            totalSeats: msg.changes.totalSeats ?? cachedEvent.totalSeats,
-            status: (msg.changes.status ?? cachedEvent.status) as
-              | "active"
-              | "draft",
-          });
-        }
-      }
+      await eventCache.set(msg);
     },
 
     [TOPICS.SEAT_RESERVED]: async (msg: SeatReserved) => {

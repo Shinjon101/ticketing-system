@@ -48,11 +48,12 @@ import type { Booking } from "@/booking/booking.table";
 
 const activeEvent = {
   eventId: randomUUID(),
+  version: 0,
   title: "Test Event",
   price: 5000,
   totalSeats: 100,
   eventDate: new Date(Date.now() + 86_400_000).toISOString(),
-  saleStartsAt: new Date(Date.now() - 1000),
+  saleStartsAt: new Date(Date.now() - 1000).toISOString(),
   status: "active" as const,
 };
 
@@ -101,7 +102,7 @@ describe("bookingService.create", () => {
   it("throws 400 when the sale hasn't started yet", async () => {
     vi.mocked(eventCache.get).mockResolvedValue({
       ...activeEvent,
-      saleStartsAt: new Date(Date.now() + 100_000),
+      saleStartsAt: new Date(Date.now() + 100_000).toISOString(),
     });
     await expect(bookingService.create(baseInput)).rejects.toMatchObject({
       statusCode: 400,

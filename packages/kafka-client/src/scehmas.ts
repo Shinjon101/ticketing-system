@@ -3,23 +3,25 @@ import { z } from "zod";
 export const EventCreatedSchema = z.object({
   messageId: z.uuid(),
   eventId: z.uuid(),
+  version: z.number().int().nonnegative(),
   title: z.string(),
   totalSeats: z.number().int().positive(),
-  price: z.number().positive().positive(), //paise
+  price: z.number().int().nonnegative(), //paise
   eventDate: z.iso.datetime(),
   status: z.enum(["active", "draft"]),
-  saleStartsAt: z.coerce.date().optional(),
+  saleStartsAt: z.coerce.date().nullable().optional(),
 });
 
 export const EventUpdatedSchema = z.object({
   messageId: z.uuid(),
   eventId: z.uuid(),
-  changes: z.object({
-    title: z.string().optional(),
-    price: z.number().int().positive().optional(),
-    totalSeats: z.number().int().positive().optional(),
-    status: z.enum(["active", "draft", "cancelled"]).optional(),
-  }),
+  version: z.number().int().nonnegative(),
+  title: z.string(),
+  totalSeats: z.number().int().positive(),
+  price: z.number().int().nonnegative(),
+  eventDate: z.iso.datetime(),
+  status: z.enum(["active", "draft", "cancelled"]),
+  saleStartsAt: z.coerce.date().nullable(),
 });
 
 export const SeatReserveRequestedSchema = z.object({

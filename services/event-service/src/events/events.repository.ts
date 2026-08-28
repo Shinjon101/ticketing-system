@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { events } from "./events.table";
 import type { Event, NewEvent } from "./events.table";
-import { and, desc, eq } from "@ticketing/db";
+import { and, desc, eq, sql } from "@ticketing/db";
 
 type Tx = typeof db;
 
@@ -36,7 +36,11 @@ export const eventsRepository = {
   ): Promise<Event | undefined> => {
     const [updated] = await tx
       .update(events)
-      .set({ ...data, updatedAt: new Date() })
+      .set({
+        ...data,
+        updatedAt: new Date(),
+        version: sql<number>`${events.version} + 1`,
+      })
       .where(and(eq(events.id, id)))
       .returning();
 

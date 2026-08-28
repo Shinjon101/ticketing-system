@@ -2,7 +2,7 @@
 
 **Status:** V3
 **Goal:** Learn system design/tradeoffs, microservices systems, DevOps concepts, observability/monitoring, following best practices
-**Last updated:** 9th August, 2026.
+**Last updated:** 28th August, 2026.
 
 ---
 
@@ -229,7 +229,7 @@ In very high traffic conditions, users all request "any available seat." `SKIP L
 **Consumes (Kafka):**
 
 - `event-created` - caches event metadata in Redis for local validation
-- `event-updated` - invalidates event cache in Redis
+- `event-updated` - conditionally replaces event metadata in Redis by version
 - `seat-reserved` - transitions booking to `held`
 - `seat-failed` - transitions booking to `failed`
 - `payment-completed` - transitions booking to `completed`
@@ -444,12 +444,13 @@ export const TOPICS = {
 {
   messageId: string;
   eventId: string;
+  version: number;
   title: string;
   totalSeats: number;
   price: number;          // paise
   eventDate: string;       // ISO datetime
   status: "active" | "draft";
-  saleStartsAt?: string;   // ISO date, optional
+  saleStartsAt?: string | null; // ISO date, nullable
 }
 
 ```
@@ -464,14 +465,14 @@ export const TOPICS = {
 {
   messageId: string;
   eventId: string;
-  changes: {
-    title?: string;
-    price?: number;
-    totalSeats?: number;
-    status?: "active" | "draft" | "cancelled";
-  };
+  version: number;
+  title: string;
+  totalSeats: number;
+  price: number; // paise
+  eventDate: string; // ISO datetime
+  status: "active" | "draft" | "cancelled";
+  saleStartsAt: string | null;
 }
-
 ```
 
 ---
@@ -635,13 +636,14 @@ if (new Date() < new Date(event.saleStartsAt)) {
 }
 ```
 
-### Cache invalidation on event.updated
+### Versioned updates on event.updated
 
 ```typescript
 // Booking Service consumes event.updated:
-await redis.del(`event:${eventId}`);
-// Next booking request gets a cache miss and returns EventNotFoundError
-// until Booking Service re-receives or re-seeds the cache
+// Atomically replace only when payload.version is newer than the cached version.
+// Cancelled snapshots are retained briefly as tombstones, so delayed older
+// active snapshots cannot recreate a bookable cache entry.
+await eventCache.set(payload);
 ```
 
 ### Idempotency
