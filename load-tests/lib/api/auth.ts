@@ -49,3 +49,38 @@ export function login(email: string, password: string): string {
 
   return (res.json() as { accessToken: string }).accessToken;
 }
+
+export function registerBatch(
+  credentials: { email: string; password: string }[],
+): AuthCredentials[] {
+  const requests: [
+    string,
+    string,
+    string,
+    { headers: Record<string, string> },
+  ][] = credentials.map(({ email, password }) => [
+    "POST",
+    `${BASE_URL}/auth/register`,
+    JSON.stringify({ email, password }),
+    { headers: publicHeaders() },
+  ]);
+
+  const responses = http.batch(requests);
+
+  return responses.map((res, i) => {
+    const { email, password } = credentials[i];
+
+    const ok = check(res, {
+      "register (batch): 201 Created": (r) => r.status === 201,
+    });
+
+    if (!ok) {
+      throw new Error(
+        `register() failed for ${email}: HTTP ${res.status} — ${res.body}`,
+      );
+    }
+
+    const body = res.json() as { accessToken: string };
+    return { accessToken: body.accessToken, email, password };
+  });
+}

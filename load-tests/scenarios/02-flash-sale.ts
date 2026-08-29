@@ -1,5 +1,8 @@
 import { TOTAL_SEATS } from "../config/config.ts";
-import { flashSaleProfile } from "../config/profiles.ts";
+import {
+  flashSaleCalibrationProfile,
+  flashSaleProfile,
+} from "../config/profiles.ts";
 import { vu } from "k6/execution";
 import { createBooking, getBooking } from "../lib/api/bookings.ts";
 import {
@@ -12,7 +15,8 @@ import { isSeatHeldOrTerminal, pollUntil } from "../lib/utils/polling.ts";
 import { setupTest } from "../lib/workflows/bootstrap.ts";
 
 const USER_POOL_SIZE = 100;
-export const options = flashSaleProfile;
+//export const options = flashSaleProfile;
+export const options = flashSaleCalibrationProfile;
 
 export function setup() {
   return setupTest({ totalSeats: TOTAL_SEATS, userPoolSize: USER_POOL_SIZE });

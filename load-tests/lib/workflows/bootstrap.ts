@@ -1,7 +1,7 @@
 import { sleep } from "k6";
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from "../../config/config.ts";
 import logger from "../../config/logger.ts";
-import { login, register } from "../api/auth.ts";
+import { login, register, registerBatch } from "../api/auth.ts";
 import { createBooking } from "../api/bookings.ts";
 import { createAndActivateEvent } from "../api/events.ts";
 import { getAvailableSeats } from "../api/inventory.ts";
@@ -23,6 +23,8 @@ export const setupTest = (config: Config) => {
   const eventId = event.id;
   logger.info(`Event created & activated:  ${eventId}`);
 
+  sleep(2);
+
   logger.info("Waiting for Inventory service to seed seats via Kafka...");
   const inventorySync = pollUntil(
     () => getAvailableSeats(eventId),
@@ -42,18 +44,17 @@ export const setupTest = (config: Config) => {
   sleep(2);
 
   logger.info(`Registering pool of ${config.userPoolSize} concurrent users...`);
-  const userTokens = [];
   const runId = Date.now();
 
-  for (let i = 0; i < config.userPoolSize; i++) {
-    const { accessToken } = register(
-      `k6-user-${runId}-${i}@test.local`,
-      "LoadTest123!",
-    );
-    userTokens.push(accessToken);
-  }
+  const credentials = Array.from({ length: config.userPoolSize }, (_, i) => ({
+    email: `k6-user-${runId}-${i}@test.local`,
+    password: "LoadTest123!",
+  }));
 
-  logger.info("Registered ${userTokens.length} test users.");
+  const registered = registerBatch(credentials);
+  const userTokens = registered.map((r) => r.accessToken);
+
+  logger.info(`Registered ${userTokens.length} test users.`);
 
   return { eventId, userTokens };
 };
