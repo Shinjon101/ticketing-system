@@ -2,7 +2,7 @@
 
 **Status:** V3
 **Goal:** Learn system design/tradeoffs, microservices systems, DevOps concepts, observability/monitoring, following best practices
-**Last updated:** 28th August, 2026.
+**Last updated:** 29th August, 2026.
 
 ---
 
@@ -1153,9 +1153,74 @@ Early in observability setup, app logs weren't appearing in Grafana at all. Root
 
 ---
 
-## 17. Load Testing (not done yet as of 9th August, 2026 : added to immediate next step)
+## 17. Load Testing
 
-Tool to be used : k6
+**Tool:** k6, with Prometheus remote-write output and a Grafana dashboard for
+live monitoring during runs. Tested against the project's local Kind
+(Kubernetes-in-Docker) cluster, reachable via
+`cloud-provider-kind`'s LoadBalancer, i.e. real Gateway routing and
+inter-service networking.
+
+### Methodology
+
+Rather than guessing a single large load number, throughput was found via
+incremental doubling: run a `ramping-arrival-rate` profile with a held peak
+(not just a ramp through it), confirm it's clean, double the peak, repeat.
+Each profile ramps up, holds at peak for 20s, then cools down to simulate sustained pressure on the system.
+
+### Results
+
+| Peak (req/s) | http_req_failed           | saga_resolution p95         | Outcome                                                                  |
+| ------------ | ------------------------- | --------------------------- | ------------------------------------------------------------------------ |
+| 20           | 0.00%                     | ~1.0s (poll-interval-bound) | Clean                                                                    |
+| 40           | 0.00%                     | ~1.0s                       | Clean                                                                    |
+| 80           | 0.00%                     | ~1.0s                       | Clean (after CPU limit fix, see below)                                   |
+| 160          | 0.00% (1/24,679 requests) | 12.5s                       | HTTP/correctness layer clean; saga latency degrades under sustained peak |
+
+At the 160 req/s peak, actual measured HTTP throughput hit **~2,000 requests/second**
+(distinct from the 160/s _iteration_ rate, since each booking iteration includes
+several HTTP calls). Applying Little's Law to the observed saga latency at that
+load (`160 req/s x ~5.8s avg latency`) gives ~930 concurrent bookings in flight
+simultaneously, consistent with this project's original goal of handling
+1,000+ concurrent booking requests without overselling.
+
+**Zero overselling at every load level tested**, verified both via k6's own
+counters and directly against Postgres (`seats.status = 'booked'` never
+exceeded `totalSeats`, and no seat ID was ever assigned to two different
+bookings).
+
+### Two real issues found and fixed via load testing
+
+**1. Cross-topic Kafka ordering bug.** Booking Service's Redis event cache
+could get stuck on a stale status (e.g. an activated event still reading as
+`draft`) because `event-created` and `event-updated` are separate Kafka
+topics -- Kafka guarantees ordering within a topic-partition, not across
+topics, and the consumer's `EVENT_UPDATED` handler silently dropped updates
+that arrived before the corresponding `event-created` had been cached.
+Fixed with a monotonic `version` column on events, propagated in every
+Kafka payload, checked via an atomic Redis Lua compare-and-swap that
+rejects any message with `version <=` the currently cached version,
+correct regardless of delivery order in either direction. Cancellation
+now writes a versioned tombstone rather than deleting the cache key, so a
+late stale message can't resurrect a cancelled event.
+
+**2. CPU throttling on `inventory-service` and `booking-service`.** Both
+services run an HTTP server and a Kafka consumer on the same process, each
+originally capped at `500m` CPU. Under real concurrent load this triggered
+Linux CFS throttling -- confirmed directly via pod log timestamps
+(`inventory-service` showed ~8ms per-message processing time but ~450ms
+gaps _between_ messages, the signature of a process being paused by the
+kernel after exhausting its CPU quota). The node itself had abundant spare
+capacity (12 cores, only ~46% allocated cluster-wide even at hard limits),
+so this was purely a too-conservative per-pod limit, not a real capacity
+shortage. Raised both services to `1500m`; verified via re-run that the
+inter-message gap dropped ~7x and the associated HTTP failures disappeared.
+
+### Known gap
+
+`outbox_events`/`processed_events` grow unbounded (no cleanup job yet --
+next on the list, see Future Steps). The load testing itself surfaced this
+directly: these tables reached millions of rows across repeated test runs.
 
 ---
 
@@ -1205,4 +1270,4 @@ Tool to be used : k6
 
 ### Immediate next steps
 
-1.  **End-to-End Load Testing**: Implement k6 load testing scripts to validate the 1,000+ concurrent user metric against the kind cluster.
+1. **CronJob for cleaning up outbox_events / processed_events**

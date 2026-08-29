@@ -5,17 +5,17 @@
   "private": true,
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "loadtest:smoke": "dotenv -e .env -e .env.smoke -- k6 run scenarios/01-smoke.ts",
+    "loadtest:flash": "dotenv -e .env -e .env.flash-sale -- k6 run scenarios/02-flash-sale.ts",
+    "loadtest:all": "pnpm run loadtest:smoke && pnpm run loadtest:flash-sale"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.30.2",
-  "dependencies": {
-    "@ticketing/db": "workspace:*"
-  },
   "devDependencies": {
     "@types/k6": "^2.0.1",
+    "dotenv-cli": "^11.0.0",
     "typescript": "^7.0.2"
   }
 }
