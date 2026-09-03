@@ -18,7 +18,7 @@ export const eventRouter: Router = Router();
 eventRouter.get("/", getAllHandler);
 
 eventRouter.get(
-  "/",
+  "/:id",
   validateRequest({ params: eventIdParamSchema }),
   getByIdHandler,
 );

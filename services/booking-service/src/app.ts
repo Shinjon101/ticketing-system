@@ -4,6 +4,7 @@ import logger from "./config/logger";
 import { getPoolStats } from "./db";
 import { bookingRouter } from "./booking/booking.routes";
 import { httpMetricsMiddleware, metricsRoute } from "./metrics";
+import { errorHandler } from "./middleware/error-handler";
 
 export const createApp = (): Application => {
   const app = express();
@@ -34,6 +35,8 @@ export const createApp = (): Application => {
   app.use((_req, res) => {
     res.status(404).json({ error: "Route not found" });
   });
+
+  app.use(errorHandler);
 
   return app;
 };

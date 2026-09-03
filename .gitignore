@@ -36,3 +36,5 @@ public.pem
 *secrets.local.yaml
 
 cloud-provider-kind.exe
+
+services/payment-service/payment-test.html
