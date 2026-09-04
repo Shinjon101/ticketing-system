@@ -19,3 +19,9 @@ await build({
   entryPoints: ["src/db/migrate.ts"],
   outfile: "dist/db/migrate.js",
 });
+
+await build({
+  ...common,
+  entryPoints: ["src/db/cleanup.ts"],
+  outfile: "dist/db/cleanup.js",
+});
