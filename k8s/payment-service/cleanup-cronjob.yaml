@@ -1,0 +1,29 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: payment-service-cleanup
+spec:
+  schedule: "10 3 * * *"
+  concurrencyPolicy : Forbid
+  
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600
+      template:
+        spec:
+          containers:
+          - name: cleanup
+            image: ghcr.io/shinjon101/ticketing-payment-service:latest
+            imagePullPolicy: Always
+            command: ["node", "dist/db/cleanup.js"]
+            envFrom:
+              - secretRef: { name: payment-service-secrets }
+            resources:
+              requests:
+                cpu: "50m"
+                memory: "64Mi"
+              limits:
+                cpu: "250m"
+                memory: "128Mi"
+          restartPolicy: OnFailure

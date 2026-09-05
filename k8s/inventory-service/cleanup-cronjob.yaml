@@ -1,0 +1,29 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: inventory-service-cleanup
+spec:
+  schedule: "30 3 * * *"
+  concurrencyPolicy : Forbid
+  
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600
+      template:
+        spec:
+          containers:
+          - name: cleanup
+            image: ghcr.io/shinjon101/ticketing-inventory-service:latest
+            imagePullPolicy: Always
+            command: ["node", "dist/db/cleanup.js"]
+            envFrom:
+              - secretRef: { name: inventory-service-secrets }
+            resources:
+              requests:
+                cpu: "50m"
+                memory: "64Mi"
+              limits:
+                cpu: "250m"
+                memory: "128Mi"
+          restartPolicy: OnFailure
