@@ -36,6 +36,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Lint
+        run: pnpm lint:ci
+
       - name: Build shared packages
         run: |
           pnpm --filter @ticketing/common build

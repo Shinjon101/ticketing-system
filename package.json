@@ -8,6 +8,7 @@
     "build": "pnpm -r --workspace-root=false run build",
     "dev": "pnpm -r --workspace-root=false run dev",
     "lint": "eslint .",
+    "lint:ci": "eslint . --max-warnings=0",
     "db:gen": "pnpm -r --workspace-root=false run db:generate",
     "db:migrate": "pnpm -r --workspace-root=false run db:migrate",
     "format": "pnpm -r --workspace-root=false run format",
