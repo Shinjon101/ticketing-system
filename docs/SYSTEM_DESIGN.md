@@ -1,8 +1,8 @@
 # Ticketing System - System Design Document
 
-**Status:** V3
+**Status:** V4
 **Goal:** Learn system design/tradeoffs, microservices systems, DevOps concepts, observability/monitoring, following best practices
-**Last updated:** 29th August, 2026.
+**Last updated:** 5th September, 2026.
 
 ---
 
@@ -967,6 +967,81 @@ async function handleSeatReserveRequested(msg: SeatReserveRequestedEvent) {
 
 The insert into `processed_events` is inside the same transaction as the business logic. If the transaction rolls back, the record is also rolled back - the message will be retried correctly next time.
 
+### 11.5 Outbox / processed_events retention (batched cleanup)
+
+**Problem:** `outbox_events` and `processed_events` are append-only by
+design so every booking, seat assignment, and payment writes at least one
+row. Neither table is ever pruned by the hot path, so both grow without
+bound. Confirmed directly during load testing: these tables reached
+millions of rows across repeated k6 runs.
+
+**Solution:** A shared batched-delete helper
+(`packages/db/src/cleanup.ts`) is invoked by a small `cleanup.ts` entrypoint
+per service, run on a schedule via a Kubernetes CronJob, one per service,
+since each owns its own database.
+
+```typescript
+await batchDeleteOlderThan(db, {
+  table: outboxEvents,
+  idColumn: outboxEvents.id,
+  timestampColumn: outboxEvents.createdAt,
+  cutoff: daysAgo(OUTBOX_RETENTION_DAYS),
+  extraCondition: eq(outboxEvents.published, true),
+  label: "outbox_events",
+});
+```
+
+**Why batched, not a single `DELETE ... WHERE created_at < $cutoff`:**
+An unbatched delete against a multi-million-row table holds a long-lived
+lock, produces a large WAL burst, and creates autovacuum pressure - all of
+which can degrade the outbox poller running concurrently against the same
+table. The cleanup helper instead deletes in bounded batches (default
+5,000 rows), sleeping briefly (`delayMs`, default 100ms) between batches
+so autovacuum and any replicas can keep up, looping until a partial batch
+confirms no eligible rows remain.
+
+**Why a subquery-based delete:** PostgreSQL's `DELETE` doesn't support
+`ORDER BY` or `LIMIT`. To delete the oldest N rows in one round trip
+without pulling IDs into application memory first, the helper compiles to:
+
+```sql
+DELETE FROM outbox_events
+WHERE id IN (
+  SELECT id FROM outbox_events
+  WHERE published = true AND created_at < $cutoff
+  ORDER BY created_at
+  LIMIT 5000
+)
+```
+
+**Per-service retention targets:**
+
+| Service             | Cleans                                          | Default retention |
+| ------------------- | ----------------------------------------------- | ----------------- |
+| `booking-service`   | `outbox_events` (published), `processed_events` | 7d / 14d          |
+| `event-service`     | `outbox_events` (published)                     | 7d                |
+| `inventory-service` | `processed_events`                              | 14d               |
+| `payment-service`   | `outbox_events` (published), `processed_events` | 7d / 14d          |
+
+`event-service` has no `processed_events` table since it doesn't consume
+any Kafka topics. `inventory-service` publishes directly via the Kafka
+producer rather than the outbox pattern, so it has no `outbox_events`
+table.
+
+**Kubernetes CronJob configuration:**
+
+- `concurrencyPolicy: Forbid`: prevents an overrunning cleanup job from
+  overlapping with the next scheduled run against the same table.
+- `backoffLimit: 2` : cleanup is naturally idempotent (a retried run just
+  deletes whatever's still past the cutoff), so retrying on transient DB
+  errors is safe.
+- Schedules staggered 5 minutes apart per service : not required for
+  correctness (each service owns a separate database), but avoids all
+  four cleanup jobs competing for the same node's CPU on a local Kind
+  cluster.
+
+Manifests: `k8s/*/cleanup-cronjob.yaml`.
+
 ---
 
 ## 12. API Reference
@@ -1216,11 +1291,11 @@ so this was purely a too-conservative per-pod limit, not a real capacity
 shortage. Raised both services to `1500m`; verified via re-run that the
 inter-message gap dropped ~7x and the associated HTTP failures disappeared.
 
-### Known gap
+### Known gap (closed)
 
-`outbox_events`/`processed_events` grow unbounded (no cleanup job yet --
+~~`outbox_events`/`processed_events` grow unbounded (no cleanup job yet --
 next on the list, see Future Steps). The load testing itself surfaced this
-directly: these tables reached millions of rows across repeated test runs.
+directly: these tables reached millions of rows across repeated test runs~~
 
 ---
 
@@ -1270,4 +1345,5 @@ directly: these tables reached millions of rows across repeated test runs.
 
 ### Immediate next steps
 
-1. **CronJob for cleaning up outbox_events / processed_events**
+1. **Wire Up ESLint to CI**
+2. **Figure out Affordable Cloud Deployment / Cloud Demo solution**
