@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { eq, inArray, sql } from "@ticketing/db";
+import { eq, inArray } from "@ticketing/db";
 import { NewOutboxEvent, OutboxEvent, outboxEvents } from "./outbox.table";
 
 export const outboxRepository = {

@@ -19,7 +19,6 @@ import { createApp } from "@/app";
 import { authService } from "@/auth/auth.service";
 import { verifyAccessToken } from "@/auth/token.service";
 import { HttpError } from "@ticketing/common";
-import { email } from "zod";
 
 const app = createApp();
 

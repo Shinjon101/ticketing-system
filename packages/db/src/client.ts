@@ -100,19 +100,19 @@ export function createDb<TSchema extends Record<string, unknown>>(
 
   const pool = new Pool(poolOptions);
 
-  pool.on("connect", (client) => {
+  pool.on("connect", (_client) => {
     logger?.debug({ serviceName }, "New DB connection established");
   });
 
-  pool.on("acquire", (client) => {
+  pool.on("acquire", (_client) => {
     logger?.debug({ serviceName }, "DB connection acquired from pool");
   });
 
-  pool.on("remove", (client) => {
+  pool.on("remove", (_client) => {
     logger?.debug({ serviceName }, "DB connection removed from pool");
   });
 
-  pool.on("error", (err, client) => {
+  pool.on("error", (err, _client) => {
     logger?.error(
       { err, serviceName },
       "Unexpected DB pool error: connection will be replaced",

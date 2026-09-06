@@ -1,4 +1,4 @@
-import { EachMessagePayload, Kafka, Message, type Consumer } from "kafkajs";
+import { EachMessagePayload, Kafka, type Consumer } from "kafkajs";
 import { type Logger } from "pino";
 import z from "zod";
 import { TOPIC_SCHEMAS } from "./scehmas";

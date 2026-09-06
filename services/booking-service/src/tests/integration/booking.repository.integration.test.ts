@@ -1,6 +1,6 @@
 import { bookingRepository } from "@/booking/booking.repsoitory";
 import { bookings } from "@/booking/booking.table";
-import { connectDB, db, disconnectDB } from "@/db";
+import { connectDB, db } from "@/db";
 import { outboxEvents } from "@/outbox/outbox.table";
 import { processedEvents } from "@/outbox/processed-events.table";
 import { randomUUID } from "crypto";

@@ -26,5 +26,4 @@ type EnvType = z.infer<typeof envSchema>;
 export const env: EnvType = createEnv(envSchema, {
   serviceName: "payment-service",
 });
-4;
 export type Env = typeof env;

@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from "@ticketing/db";
+import { eq, inArray } from "@ticketing/db";
 import { db } from "@/db";
 import {
   outboxEvents,

@@ -1,4 +1,4 @@
-import client, { register } from "prom-client";
+import client from "prom-client";
 
 export interface MetricsRegistryOptions {
   serviceName: string;

@@ -46,7 +46,7 @@ export const authenticate = (
 
     req.user = payload;
     next();
-  } catch (err) {
+  } catch {
     next(new HttpError(401, "Invalid or expired token"));
   }
 };

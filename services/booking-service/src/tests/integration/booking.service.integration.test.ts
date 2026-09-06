@@ -10,7 +10,7 @@ vi.mock("@/redis/booking.cache", () => ({
 
 import { randomUUID } from "crypto";
 import { eq } from "@ticketing/db";
-import { connectDB, db, disconnectDB } from "@/db";
+import { connectDB, db } from "@/db";
 import { bookings } from "@/booking/booking.table";
 import { outboxEvents } from "@/outbox/outbox.table";
 import { processedEvents } from "@/outbox/processed-events.table";
