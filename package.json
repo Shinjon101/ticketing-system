@@ -7,7 +7,7 @@
   "scripts": {
     "build": "pnpm -r --workspace-root=false run build",
     "dev": "pnpm -r --workspace-root=false run dev",
-    "lint": "pnpm -r --workspace-root=false run lint",
+    "lint": "eslint .",
     "db:gen": "pnpm -r --workspace-root=false run db:generate",
     "db:migrate": "pnpm -r --workspace-root=false run db:migrate",
     "format": "pnpm -r --workspace-root=false run format",
@@ -28,6 +28,7 @@
     "prettier": "^3.8.1",
     "tsc-alias": "^1.8.8",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.69.0"
   }
 }
