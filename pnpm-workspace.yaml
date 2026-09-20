@@ -1,4 +1,4 @@
 packages:
   - "services/*"
   - "packages/*"
-  - "load-tests/*"
+  - "load-tests"
