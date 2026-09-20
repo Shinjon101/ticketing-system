@@ -2,7 +2,7 @@
 
 **Status:** V4
 **Goal:** Learn system design/tradeoffs, microservices systems, DevOps concepts, observability/monitoring, following best practices
-**Last updated:** 5th September, 2026.
+**Last updated:** 20th September, 2026.
 
 ---
 
@@ -1137,12 +1137,106 @@ The system runs locally on a **Kind k8s cluster** (Kubernetes inside Docker)
 
 - Each Service and its DB (headless services + statefullset) has its own manifest, config and secrets (not committed ofc)
 - Redis and Kafka have thier own manifests and configs
-- We use the modern **K8s Gateway API** to route traffic into the cluster, shifting away from legacy **K8s Ingress** for better sepeartion of concern, as gateway controller config is in `gateway.yaml` and http routes for the gateway are in `http-routes.yaml`
+- We use the modern **K8s Gateway API** to route traffic into the cluster, shifting away from legacy **K8s Ingress** for better sepeartion of concern, as gateway controller config is in `gateway.yaml` and http routes for the gateway are in `httproutes.yaml`
 - We use `cloud-provider-kind` to dynamically provision local LoadBalancer, enabling access from the host machine to the gateway API routing without manual port forwarding for application traffic.
 - Observability stack is deployed via **Helm** into dedicated `observability` namespace This includes the `kube-prometheus-stack` (Prometheus, Grafana, Alertmanager), Loki, and Grafana Alloy. Local access to infrastructure UIs is handled securely via `kubectl port-forward` (e.g., port `9090` for Prometheus, port `3000` for Grafana) rather than exposing them through the public Gateway.
-- Building and pushing public Docker images of the 5 services directly to GitHub Container Registry (GHCR) via GitHub Actions. The Kubernetes manifests of these services pull these public images directly using `imagePullPolicy: Always` to ensure the latest dynamic tags are fetched on pod restarts without needing explicit image pull secrets.
+- Building and pushing public Docker images of the 5 services directly to GitHub Container Registry (GHCR) via GitHub Actions, tagged `latest` and `sha-<commit>`. The Kubernetes manifests pin the immutable `sha-<commit>` tag and set no `imagePullPolicy` (defaults to `IfNotPresent`), so a new image only rolls out when the tag in git changes. The images are public, so no image pull secrets are needed.
 
-  Example URI: `ghcr.io/shinjon101/ticketing-booking-service:latest`
+  Example URI: `ghcr.io/shinjon101/ticketing-booking-service:sha-0d175ed`
+
+### Rebuilding the cluster from scratch
+
+Run everything from the repo root, in this order. The Gateway API CRDs have to exist before the gateway, and the Prometheus operator CRDs before the `ServiceMonitor`.
+
+**1. Cluster + LoadBalancer**
+
+```bash
+kind create cluster
+
+# separate terminal, leave it running (gives the Gateway a real LoadBalancer IP)
+./cloud-provider-kind.exe
+```
+
+**2. Gateway API + NGINX Gateway Fabric**
+
+```bash
+# server-side apply, the CRDs are large
+kubectl apply --server-side -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.6.1/standard-install.yaml
+
+helm install ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric --version 2.7.2 --create-namespace -n nginx-gateway
+
+# Gateway + HTTPRoutes
+kubectl apply -f k8s/gateway/
+```
+
+**3. Observability (Helm, `observability` namespace)**
+
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo add grafana-community https://grafana-community.github.io/helm-charts
+helm repo update
+
+helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack --version 88.3.0 -n observability --create-namespace -f k8s/observability/prometheus/prometheus-values.yaml
+helm upgrade --install loki grafana-community/loki --version 18.13.4 -n observability -f k8s/observability/loki/loki-values.yaml
+
+helm upgrade --install grafana grafana/grafana --version 10.5.15 -n observability -f k8s/observability/grafana/grafana-values.yaml
+
+helm upgrade --install alloy grafana/alloy --version 1.11.1 -n observability -f k8s/observability/alloy/alloy-values.yaml
+```
+
+```bash
+# once the operator CRDs exist
+kubectl apply -f k8s/observability/servicemonitor-ticketing.yaml
+kubectl apply -f k8s/observability/grafana/dashboards-configmaps.yaml
+```
+
+Access is via `kubectl port-forward` (`svc/grafana 3000:80`, `svc/kube-prometheus-stack-prometheus 9090:9090`).
+
+| Component             | Chart                                             | Version | App version |
+| --------------------- | ------------------------------------------------- | ------- | ----------- |
+| Gateway API CRDs      | `standard-install.yaml` (release)                 | v1.6.1  | n/a         |
+| NGINX Gateway Fabric  | `oci://ghcr.io/nginx/charts/nginx-gateway-fabric` | 2.7.2   | 2.7.2       |
+| kube-prometheus-stack | `prometheus-community/kube-prometheus-stack`      | 88.3.0  | v0.93.0     |
+| Loki                  | `grafana-community/loki`                          | 18.13.4 | 3.7.8       |
+| Grafana               | `grafana/grafana`                                 | 10.5.15 | 12.3.1      |
+| Alloy                 | `grafana/alloy`                                   | 1.11.1  | v1.18.1     |
+| ArgoCD                | `install.yaml` (`stable` branch)                  | v3.5.3  | v3.5.3      |
+
+These are the versions the values files in `k8s/observability/` were tested against (NGF was 2.6.7 on the first cluster, 2.7.2 on the rebuilt one). Loki moved to the `grafana-community` repo (the first cluster ran `grafana/loki` 7.2.0, the 18.x chart works with the same values file). Grafana is still on the old `grafana/grafana` chart, 13.x lives under `grafana-community` and may need values changes, so bump charts deliberately rather than by dropping `--version`.
+
+**4. Secrets (manual, for now)**
+
+Secrets are gitignored (`secret.local.yaml`), so ArgoCD can't sync them. Apply them by hand before the first sync, otherwise the pods sit in `CreateContainerConfigError`.
+
+```bash
+for s in auth booking event inventory payment; do
+  kubectl apply -f k8s/$s-db/secret.local.yaml
+  kubectl apply -f k8s/$s-service/secret.local.yaml
+done
+```
+
+Env vars are only read when a container starts, so after editing a Secret later run `kubectl rollout restart deployment/<service>`.
+
+**5. ArgoCD**
+
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+# deploys everything under k8s/ from main
+kubectl apply -f argocd/application.yaml
+```
+
+UI at `https://localhost:8080`, user `admin`:
+
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+```
+
+The Application (`argocd/application.yaml`) syncs `k8s/` from `main` (recursive, Helm values files excluded) with automated `prune` and `selfHeal`, so changes only reach the cluster once pushed. Sync order is set with annotations: databases, Kafka and Redis first, then the migrate Jobs (Sync hook, wave 1), then the Deployments (wave 2), then the admin seed (PostSync hook).
 
 ## 15. CI/CD: GitHub Actions
 
