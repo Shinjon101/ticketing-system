@@ -33,8 +33,7 @@ spec:
     spec:
       containers:
         - name: payment-service
-          image: ghcr.io/shinjon101/ticketing-payment-service:latest
-          imagePullPolicy: Always
+          image: ghcr.io/shinjon101/ticketing-payment-service:sha-0d175ed
           ports:
             - containerPort: 4007
           envFrom:

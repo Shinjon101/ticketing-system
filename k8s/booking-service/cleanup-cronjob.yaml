@@ -13,8 +13,7 @@ spec:
         spec:
           containers:
           - name: cleanup
-            image: ghcr.io/shinjon101/ticketing-booking-service:latest
-            imagePullPolicy: Always
+            image: ghcr.io/shinjon101/ticketing-booking-service:sha-0d175ed
             command: ["node", "dist/db/cleanup.js"]
             envFrom:
               - secretRef: { name: booking-service-secrets }
