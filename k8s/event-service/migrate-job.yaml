@@ -14,7 +14,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: ghcr.io/shinjon101/ticketing-event-service:sha-20cc98b
+          image: ghcr.io/shinjon101/ticketing-event-service:sha-75f6084
           command: ["node", "dist/db/migrate.js"]
           envFrom:
             - secretRef: { name: event-service-secrets }

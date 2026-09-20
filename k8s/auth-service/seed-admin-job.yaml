@@ -13,7 +13,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: seed-admin
-          image: ghcr.io/shinjon101/ticketing-auth-service:sha-20cc98b
+          image: ghcr.io/shinjon101/ticketing-auth-service:sha-75f6084
           command: ["node", "dist/db/seed-admin.js"]
           envFrom:
             - secretRef: { name: auth-service-secrets }
