@@ -18,6 +18,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: auth-service
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
   labels:
     app: auth-service
 spec:

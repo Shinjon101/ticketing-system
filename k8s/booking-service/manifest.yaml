@@ -17,6 +17,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: booking-service
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
   labels:
     app: booking-service
 spec:

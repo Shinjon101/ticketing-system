@@ -20,6 +20,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: inventory-service
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
   labels:
     app: inventory-service
 spec:
