@@ -43,6 +43,8 @@ FROM node:22-alpine AS runner
 ARG PORT=4005
 
 RUN apk add --no-cache tini
+# npm, yarn and corepack are never used at runtime; dropping them removes npm's bundled dependencies (and their CVEs) from the image
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 WORKDIR /app
 
