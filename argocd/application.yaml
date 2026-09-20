@@ -1,0 +1,22 @@
+# argocd/application.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ticketing-system
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Shinjon101/ticketing-system
+    targetRevision: main
+    path: k8s
+    directory:
+      recurse: true
+      exclude: '**/*-values.yaml'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
