@@ -1,8 +1,17 @@
-#Continuous Integration workflow for the ticketing system, version:3.0.0
+#V4
+
 name: CI
+
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - "k8s/**"
+      - "argocd/**"
+      - ".github/dependabot.yml"
+      - "load-tests/**"
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -13,22 +22,25 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   validate:
     name: Validate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup pnpm
-        run: corepack enable && corepack prepare pnpm@10.30.2 --activate
+        # version comes from "packageManager" in package.json
+        run: corepack enable
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: "pnpm"
@@ -56,12 +68,19 @@ jobs:
           pnpm --filter @ticketing/inventory-service typecheck
           pnpm --filter @ticketing/payment-service typecheck
 
-      - name: Run tests
+      - name: Generate throwaway JWT keypair
+        run: |
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$RUNNER_TEMP/jwt.key"
+          openssl pkey -in "$RUNNER_TEMP/jwt.key" -pubout -out "$RUNNER_TEMP/jwt.pub"
+          {
+            echo "JWT_PRIVATE_KEY<<EOF"; cat "$RUNNER_TEMP/jwt.key"; echo "EOF"
+            echo "JWT_PUBLIC_KEY<<EOF"; cat "$RUNNER_TEMP/jwt.pub"; echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Run auth-service unit tests
         run: pnpm --filter @ticketing/auth-service test
         env:
           NODE_ENV: test
-          JWT_PRIVATE_KEY: ${{ secrets.JWT_PRIVATE_KEY }}
-          JWT_PUBLIC_KEY: ${{ secrets.JWT_PUBLIC_KEY }}
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db
 
       - name: Run inventory-service unit tests
@@ -74,9 +93,7 @@ jobs:
         run: pnpm --filter @ticketing/payment-service test
 
       - name: Run event-service unit tests
-        run: pnpm --filter @ticketing/event-service test  
-
-      #Integration tests via Testcontainers.
+        run: pnpm --filter @ticketing/event-service test
 
       - name: Run inventory-service integration tests
         run: pnpm --filter @ticketing/inventory-service test:integration
@@ -91,9 +108,13 @@ jobs:
         run: pnpm --filter @ticketing/event-service test:integration
 
   docker:
-    name: Docker build (${{matrix.service}})
-    runs-on: ubuntu-latest
+    name: Docker build (${{ matrix.service }})
+    runs-on: ubuntu-24.04
     needs: validate
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -106,19 +127,20 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-    
-# Lowercase repo owner to prevent invalid GHCR image naming format errors
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
       - name: Format repository owner
         id: repo_owner
-        run: echo "owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -126,7 +148,7 @@ jobs:
 
       - name: Extract Docker metadata (tags, labels)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/${{ steps.repo_owner.outputs.owner }}/ticketing-${{ matrix.service }}
           tags: |
@@ -135,13 +157,93 @@ jobs:
             type=ref,event=branch
             type=semver,pattern={{version}}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+      - name: Build image (local, for scanning)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: services/${{ matrix.service }}/Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          load: true
+          push: false
+          tags: scan/${{ matrix.service }}:${{ github.sha }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Scan image (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: scan/${{ matrix.service }}:${{ github.sha }}
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Push scanned image
+        if: github.event_name != 'pull_request'
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          SRC: scan/${{ matrix.service }}:${{ github.sha }}
+        run: |
+          while read -r tag; do
+            [ -z "$tag" ] && continue
+            docker tag "$SRC" "$tag"
+            docker push "$tag"
+          done <<< "$TAGS"
+
+  bump-manifests:
+    name: Bump image tags
+    needs: docker
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+
+      - name: Compute image tag
+        run: echo "TAG=sha-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Verify all 5 images exist at this tag
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          for s in auth event booking inventory payment; do
+            docker buildx imagetools inspect \
+              "ghcr.io/${OWNER}/ticketing-${s}-service:${TAG}" > /dev/null \
+              || { echo "::error::ticketing-${s}-service:${TAG} not found in GHCR"; exit 1; }
+          done
+
+      - name: Point manifests at this commit's images
+        run: |
+          REF='ghcr\.io/[a-z0-9-]+/ticketing-[a-z]+-service'
+          bump() {
+            grep -rlE --include='*.yaml' "${REF}:" k8s \
+              | xargs -r sed -i -E "s#(${REF}):[A-Za-z0-9._-]+#\1:${TAG}#"
+            total=$(grep -rhE --include='*.yaml' "${REF}:" k8s | wc -l)
+            current=$(grep -rhE --include='*.yaml' "${REF}:${TAG}[[:space:]]*$" k8s | wc -l)
+            [[ $total -gt 0 && $total -eq $current ]] \
+              || { echo "::error::only ${current}/${total} image refs at ${TAG}"; exit 1; }
+          }
+          declare -f bump > /tmp/bump.sh   # reused by the retry below
+          echo "REF='${REF}'" >> /tmp/bump.sh
+          bump
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          source /tmp/bump.sh
+
+          for attempt in 1 2 3; do
+            if git diff --quiet; then echo "already at ${TAG}"; exit 0; fi
+            git commit -am "chore(deploy): bump service images to ${TAG} [skip ci]" \
+                       -m "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            git push origin HEAD:main && exit 0
+            echo "push rejected (attempt ${attempt}); re-applying on latest main"
+            git fetch origin main && git reset --hard origin/main
+            bump
+          done
+          echo "::error::could not push after 3 attempts"; exit 1
