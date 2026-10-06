@@ -10,6 +10,7 @@ on:
       - "**.md"
       - "k8s/**"
       - "argocd/**"
+      - "infra/**"
       - ".github/dependabot.yml"
       - "load-tests/**"
   pull_request:

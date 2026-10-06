@@ -38,3 +38,17 @@ public.pem
 cloud-provider-kind.exe
 
 services/payment-service/payment-test.html
+
+CLAUDE.md
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+.terraformrc
+terraform.rc
