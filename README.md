@@ -115,9 +115,7 @@ pnpm --filter @ticketing/booking-service test              # unit tests
 pnpm --filter @ticketing/booking-service test:integration   # integration tests (spins up a real Postgres container)
 ```
 
-Replace `booking-service` with `auth-service`, `inventory-service`, or `payment-service` as needed.
-
-> **Note:** `event-service` currently has typecheck coverage only, its test suite is a tracked gap (see [SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md#19-future-steps)).
+Replace `booking-service` with `auth-service`, `inventory-service`, `event-service` or `payment-service` as needed.
 
 ---
 
