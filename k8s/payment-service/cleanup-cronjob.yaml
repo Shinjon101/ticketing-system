@@ -14,7 +14,7 @@ spec:
         spec:
           containers:
           - name: cleanup
-            image: ghcr.io/shinjon101/ticketing-payment-service:sha-75f6084
+            image: ghcr.io/shinjon101/ticketing-payment-service:sha-c90a6f8
             command: ["node", "dist/db/cleanup.js"]
             envFrom:
               - secretRef: { name: payment-service-secrets }
