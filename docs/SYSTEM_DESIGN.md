@@ -2,7 +2,7 @@
 
 **Status:** V4
 **Goal:** Learn system design/tradeoffs, microservices systems, DevOps concepts, observability/monitoring, following best practices
-**Last updated:** 20th September, 2026.
+**Last updated:** 10th October, 2026.
 
 ---
 
@@ -75,13 +75,14 @@ For now, Users do not pick a specific seat. They request "X seats for event Y" a
 - Redis (idempotency, event cache, availability counter)
 - Docker + Kubernetes (local with Kind)
 - API Gateway (K8s Gateway API replacing legacy Ingress)
-- CI/CD (GitHub Actions + GHCR image publishing)
+- CI/CD (GitHub Actions + Trivy image scanning + GHCR image publishing)
+- GitOps CD (ArgoCD, syncs `k8s/` from `main`)
 - Observability (kube-prometheus-stack, Grafana Alloy, Loki via Helm)
 
 ### To add later
 
 - Notification Service
-- AWS deployment + Terraform (Finding best way to demo its deployment at minimal cost, will learn how to write terraform to provision proper infra for its deployment which will not be used live due to budget restraints)
+- Azure deployment (AKS) + Terraform. In progress: `infra/terraform/` provisions a VNet and node subnet as practice, the AKS cluster itself is next
 
 ---
 
@@ -89,7 +90,8 @@ For now, Users do not pick a specific seat. They request "X seats for event Y" a
 
 ### Diagram
 
- <img src="diagrams/system-architecture.png" alt="Ticketing System architecture: client/gateway flow, five services with their databases, Kafka event bus, and the observability pipeline (Prometheus/Alloy/Loki → Grafana)" width="800" />
+<!-- markdownlint-disable-next-line MD033 -->
+<img src="diagrams/system-architecture.png" alt="Ticketing System architecture: client/gateway flow, five services with their databases, Kafka event bus, and the observability pipeline (Prometheus/Alloy/Loki → Grafana)" width="800" />
 
 ### Technology stack
 
@@ -104,6 +106,9 @@ For now, Users do not pick a specific seat. They request "X seats for event Y" a
 | Containerisation | Docker (multi-stage builds) | Reproducible environments                                                                  |
 | Orchestration    | Kubernetes via Kind         | Industry standard, horizontal scaling                                                      |
 | CI/CD            | GitHub Actions              | Integrated with repo                                                                       |
+| GitOps / CD      | ArgoCD                      | TODO                                                                                       |
+| Image scanning   | Trivy                       | TODO                                                                                       |
+| IaC              | Terraform (`azurerm`)       | TODO                                                                                       |
 | Logging          | Pino                        | Structured JSON logging for traceability                                                   |
 | Load testing     | k6                          | Scriptable, handles 1000+ virtual users                                                    |
 | Monitoring       | Grafana                     | cost effective, centralized monitoring, customizeable                                      |
@@ -192,7 +197,7 @@ For now, Users do not pick a specific seat. They request "X seats for event Y" a
 
 **Locking strategy:**
 
-```
+```TypeScript
 const rows = await tx
     .select()
      .from(seats)
@@ -237,7 +242,7 @@ In very high traffic conditions, users all request "any available seat." `SKIP L
 
 **Booking state machine:**
 
-```
+```TypeScript
 pending -> seat_held -> payment_initiated -> confirmed   (terminal success)
 -> failed                                         (terminal failure - no seats, payment declined, or hold expired)
 confirmed -> cancelled  (future phase - user-initiated cancellation)
@@ -661,7 +666,7 @@ if (!set) {
 
 ### 10.1 Successful booking
 
-```
+```text
 1. Client -> POST /bookings
    Body: { eventId, quantity }        <- no seatIds, user picks quantity only
    Headers: Idempotency-Key: <uuid>
@@ -748,7 +753,7 @@ if (!set) {
 
 ### 10.2 Failed booking: no seats available
 
-```
+```text
 Steps 1->3 identical.
 
 4. Inventory Service consumes seat-reserve-requested:
@@ -773,7 +778,7 @@ Steps 1->3 identical.
 
 ### 10.3 Failed booking payment declined or hold expired (compensation flow)
 
-```
+```text
 Steps 1->6 identical to 10.1 (booking reaches seat_held, hold created in Payment Service).
 
 7. Either:
@@ -807,7 +812,7 @@ Steps 1->6 identical to 10.1 (booking reaches seat_held, hold created in Payment
 
 ### 10.4 Event creation: seeding seats in Inventory
 
-```
+```text
 1. Admin -> POST /events { title, totalSeats: 200, price: 50000, saleStartsAt, ... }
 
 2. Event Service:
@@ -889,7 +894,7 @@ Without `SKIP LOCKED`, two Booking Service replicas would queue up on the same r
 
 No central orchestrator. Services react to each other's Kafka events.
 
-```
+```text
 Booking -> seat-reserve-requested -> Inventory
                                         |
                            +-----------+----------+
@@ -1032,9 +1037,11 @@ table.
 
 - `concurrencyPolicy: Forbid`: prevents an overrunning cleanup job from
   overlapping with the next scheduled run against the same table.
+
 - `backoffLimit: 2` : cleanup is naturally idempotent (a retried run just
   deletes whatever's still past the cutoff), so retrying on transient DB
   errors is safe.
+
 - Schedules staggered 5 minutes apart per service : not required for
   correctness (each service owns a separate database), but avoids all
   four cleanup jobs competing for the same node's CPU on a local Kind
@@ -1046,9 +1053,9 @@ Manifests: `k8s/*/cleanup-cronjob.yaml`.
 
 ## 12. API Reference
 
-#### Auth endpoints
+### Auth endpoints
 
-```
+```text
 POST  /auth/register    Register new user
 POST  /auth/login       Login - returns access token + refresh token (httpOnly cookie)
 POST  /auth/logout      Revoke current session
@@ -1057,9 +1064,9 @@ GET   /auth/me          Get current user profile
 
 ```
 
-#### Event endpoints
+### Event endpoints
 
-```
+```text
 GET   /events           List all active events
 GET   /events/:id       Get event details
 POST  /events           [admin] Create event
@@ -1067,9 +1074,9 @@ PATCH /events/:id       [admin] Update event
 
 ```
 
-#### Booking endpoints
+### Booking endpoints
 
-```
+```text
 POST  /bookings         Create a booking - returns 202 + bookingId
                          Body: { eventId, quantity }   (quantity: 1-6, default 1)
                          Header: Idempotency-Key: <uuid>  [required]
@@ -1079,9 +1086,9 @@ GET   /bookings/        Get current user's bookings
 
 ```
 
-#### Payment endpoints
+### Payment endpoints
 
-```
+```text
 POST  /payments/orders   Create (or return existing) Razorpay order for a booking
                           Body: { bookingId }
                           Auth required. 404 if no hold, 403 if not owner,
@@ -1096,9 +1103,9 @@ POST  /payments/webhook  Razorpay webhook receiver (no auth — verified via
 
 ```
 
-#### Inventory endpoints
+### Inventory endpoints
 
-```
+```text
 GET   /seats/:eventId/available   Fast availability count (Redis-backed, falls back to DB)
 
 ```
@@ -1123,6 +1130,8 @@ pnpm run dev --filter=*
 
 Each service builds via a 4-stage Dockerfile: `base` (pnpm via corepack) → `dependencies` (workspace install, cached layer) → `builder` (esbuild bundle per service + `pnpm deploy --prod` to isolate runtime deps) → `runner` (minimal `node:22-alpine`, non-root user, `tini` as PID 1, `HEALTHCHECK` against `/health`).
 
+The `runner` stage also deletes npm, npx, yarn and corepack from the base image. The container only ever runs `node`, and npm's bundled dependencies were the source of most of the CVEs Trivy flagged in the base image.
+
 Lean, explicit Dockerfiles are used per service rather than one parameterized `ARG`-templated Dockerfile deliberate tradeoff favoring clarity over DRY-ness for a 5-service system (see project preferences).
 
 ### docker-compose (current local orchestration)
@@ -1144,20 +1153,24 @@ The system runs locally on a **Kind k8s cluster** (Kubernetes inside Docker)
 
   Example URI: `ghcr.io/shinjon101/ticketing-booking-service:sha-0d175ed`
 
+- Deployments are GitOps via **ArgoCD**: one `Application` (`argocd/application.yaml`) syncs everything under `k8s/` from `main`. CI never touches the cluster, it only commits new image tags to git and ArgoCD pulls them in.
+
 ### Rebuilding the cluster from scratch
 
 Run everything from the repo root, in this order. The Gateway API CRDs have to exist before the gateway, and the Prometheus operator CRDs before the `ServiceMonitor`.
 
-**1. Cluster + LoadBalancer**
+#### 1. Cluster + LoadBalancer
 
 ```bash
 kind create cluster
 
 # separate terminal, leave it running (gives the Gateway a real LoadBalancer IP)
-./cloud-provider-kind.exe
+./cloud-provider-kind.exe --gateway-channel=disabled
 ```
 
-**2. Gateway API + NGINX Gateway Fabric**
+`--gateway-channel=disabled` is required. By default `cloud-provider-kind` installs its own (older) Gateway API CRDs on startup, which the `safe-upgrades` admission policy shipped with Gateway API v1.6.1 rejects as a downgrade, and the controller exits. The CRDs are installed and pinned in step 2 instead. It also doesn't survive a cluster rebuild or Docker restart, so it has to be started again each time.
+
+#### 2. Gateway API + NGINX Gateway Fabric
 
 ```bash
 # server-side apply, the CRDs are large
@@ -1169,7 +1182,7 @@ helm install ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric --version 2.7.2
 kubectl apply -f k8s/gateway/
 ```
 
-**3. Observability (Helm, `observability` namespace)**
+#### 3. Observability (Helm, `observability` namespace)
 
 ```bash
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -1205,7 +1218,7 @@ Access is via `kubectl port-forward` (`svc/grafana 3000:80`, `svc/kube-prometheu
 
 These are the versions the values files in `k8s/observability/` were tested against (NGF was 2.6.7 on the first cluster, 2.7.2 on the rebuilt one). Loki moved to the `grafana-community` repo (the first cluster ran `grafana/loki` 7.2.0, the 18.x chart works with the same values file). Grafana is still on the old `grafana/grafana` chart, 13.x lives under `grafana-community` and may need values changes, so bump charts deliberately rather than by dropping `--version`.
 
-**4. Secrets (manual, for now)**
+#### 4. Secrets (manual, for now)
 
 Secrets are gitignored (`secret.local.yaml`), so ArgoCD can't sync them. Apply them by hand before the first sync, otherwise the pods sit in `CreateContainerConfigError`.
 
@@ -1218,7 +1231,7 @@ done
 
 Env vars are only read when a container starts, so after editing a Secret later run `kubectl rollout restart deployment/<service>`.
 
-**5. ArgoCD**
+#### 5. ArgoCD
 
 ```bash
 kubectl create namespace argocd
@@ -1238,26 +1251,107 @@ kubectl port-forward svc/argocd-server -n argocd 8080:443
 
 The Application (`argocd/application.yaml`) syncs `k8s/` from `main` (recursive, Helm values files excluded) with automated `prune` and `selfHeal`, so changes only reach the cluster once pushed. Sync order is set with annotations: databases, Kafka and Redis first, then the migrate Jobs (Sync hook, wave 1), then the Deployments (wave 2), then the admin seed (PostSync hook).
 
+Migrate Jobs run on every sync (including image bumps). That's safe since Drizzle migrations are idempotent, and it means a new image's migrations always finish before its pods start. The admin seed is idempotent too (creates or promotes the admin user, otherwise no-op).
+
+### Cloud: Azure + Terraform (in progress)
+
+Infra code lives in `infra/terraform/` (`azurerm ~> 4.0`, Terraform `>= 1.9`). State is local for now and gitignored; it moves to an Azure Blob backend before the cluster exists, since `azurerm_kubernetes_cluster` writes `kube_config` into state in plaintext.
+
+So far: a VNet (`10.10.0.0/16`) and one node subnet (`10.10.1.0/24`, a `/24` because Azure CNI Overlay takes pod IPs from a separate range, not the subnet). It was written to learn the Terraform loop, not to be built on. The first cluster will use AKS's own managed VNet, because handing AKS a subnet we own means granting its managed identity `Network Contributor` on that subnet, and the service principal Terraform runs as is scoped to a single resource group and so can't create role assignments. Bringing our own VNet is a later exercise.
+
+#### Bootstrap
+
+One-off, and run as the account owner rather than the service principal, since every step here is outside what that principal is allowed to do.
+
+##### 1. Resource group
+
+Created out-of-band and only ever read as a `data` source, so Terraform's authority stops at the resource-group boundary and `destroy` can't take the group with it.
+
+```bash
+az group create -n rg-ticketing-dev -l indiasouthcentral
+```
+
+##### 2. Service principal for Terraform
+
+Scoped to that one resource group, not the subscription.
+
+```bash
+az ad sp create-for-rbac --name sp-terraform-ticketing \
+  --role Contributor \
+  --scopes /subscriptions/<subscription-id>/resourceGroups/rg-ticketing-dev
+```
+
+`appId`, `password` and `tenant` are printed once. The narrow scope costs two things: the principal can't register resource providers, which is a subscription-level write, hence `resource_provider_registrations = "none"` in the provider block and the handful that are needed registered by hand (`az provider show -n <namespace> --query registrationState`); and it can't create role assignments, which is what rules out a bring-your-own subnet for the first cluster.
+
+##### 3. Credentials in the shell
+
+Read from the environment by the provider, never from a `.tf` file or a committed `.tfvars`.
+
+```powershell
+$env:ARM_CLIENT_ID       = "<appId>"
+$env:ARM_CLIENT_SECRET   = "<password>"
+$env:ARM_TENANT_ID       = "<tenant>"
+$env:ARM_SUBSCRIPTION_ID = "<subscription-id>"
+```
+
+**References followed:**
+
+- [HashiCorp's Azure get-started tutorial](https://developer.hashicorp.com/terraform/tutorials/azure-get-started/azure-build) and [MS Learn's AKS + Terraform quickstart](https://learn.microsoft.com/en-us/azure/aks/learn/quick-kubernetes-deploy-terraform)
+- For the overall shape, the [service principal + client secret guide](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/guides/service_principal_client_secret)
+- Studying about [Vnet](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/virtual_network)
+
 ## 15. CI/CD: GitHub Actions
 
-Current pipeline (`.github/workflows/ci.yaml`):
+Current pipeline (`.github/workflows/ci.yaml`), the full loop from push to running pods:
 
-```
+```text
 validate job:
-  1. Install deps, build shared packages (common, db, kafka-client)
-  2. Typecheck all 5 services
-  3. Unit tests: auth, inventory, booking, event, payment services
-  4. Integration tests (Testcontainers): inventory, booking, event, payment services
+  1. Install deps (frozen lockfile), lint (eslint --max-warnings=0)
+  2. Build shared packages (common, db, kafka-client), typecheck all packages + 5 services
+  3. Generate a throwaway RSA keypair for the auth tests (no repo secrets needed)
+  4. Unit tests: auth, inventory, booking, event, payment services
+  5. Integration tests (Testcontainers): inventory, booking, event, payment services
 
-docker job (needs: validate):
-  5. Docker build for all 5 services in parallel (matrix) and push public images to GHCR, with proper image tagging.
+docker job (needs: validate, matrix over the 5 services):
+  6. Build the image once, locally
+  7. Scan it with Trivy, fail on fixable CRITICAL/HIGH CVEs
+  8. Tag and push that exact scanned image to GHCR (skipped on PRs): latest + sha-<commit>
 
+bump-manifests job (needs: docker, push to main only):
+  9. Verify all 5 images exist at sha-<commit>
+  10. Rewrite every service image ref under k8s/ to sha-<commit>, check none were missed
+  11. Commit "chore(deploy): bump service images to sha-<commit> [skip ci]" and push (retries on conflict)
+
+ArgoCD (in cluster):
+  12. Sees the new commit on main, runs migrations (wave 1), rolls the Deployments (wave 2)
 ```
+
+**Pipeline details:**
+
+- **Triggers:** pushes to `main`, PRs to `main`, manual dispatch. Pushes that only touch `docs/`, `*.md`, `k8s/`, `argocd/`, `infra/`, `load-tests/` or `dependabot.yml` are ignored, so a config-only change doesn't rebuild images and roll every service.
+- **No loop:** the bump commit is pushed with `GITHUB_TOKEN`, which doesn't trigger workflows, and also carries `[skip ci]`.
+- **Concurrency:** one run per ref, newer runs cancel older ones. A superseded commit never gets images, so the bump always lands the newest commit.
+- **Least privilege:** workflow default is `contents: read`. Only `docker` gets `packages: write` and only `bump-manifests` gets `contents: write`. Checkouts in jobs that don't push use `persist-credentials: false`.
+- **Pinned:** every third-party action is pinned to a commit SHA (version in a comment), runners are pinned to `ubuntu-24.04`, and the pnpm version comes from `packageManager` in `package.json`.
+- **Scan what you ship:** scan and push used to be two separate builds, so a cache eviction in between could push bytes Trivy never saw. Now the scanned image itself is tagged and pushed, with OCI labels added at build time.
+- **No secrets in tests:** the auth tests get a keypair generated in the job, so Dependabot and fork PRs (which can't read repo secrets) pass too.
+- **Dependabot** (`.github/dependabot.yml`): weekly grouped PRs for GitHub Actions (`chore(ci)`) and the service Dockerfiles' base images (`chore(docker)`, Node major bumps ignored). Dependabot PRs run the full pipeline like any other PR.
+
+**What the Trivy gate has caught so far:**
+
+| CVE source                                         | Where it came from                       | Fix                                       |
+| -------------------------------------------------- | ---------------------------------------- | ----------------------------------------- |
+| `tar`, `pacote`, `sigstore`, etc. (11, 1 CRITICAL) | npm's bundled deps in `node:22-alpine`   | delete npm/yarn/corepack in `runner`      |
+| `form-data` 4.0.5 (HIGH)                           | `razorpay` → `axios`, payment-service    | lockfile refresh to 4.0.6                 |
+| `proxy-addr` 2.0.7 (CRITICAL)                      | `express`, all 5 services                | lockfile refresh to 2.0.8                 |
+| `axios` 1.18.1 (HIGH)                              | `razorpay`, payment-service              | lockfile refresh to 1.20.0                |
+
+None of these were in code that changed in the failing commit, a new CVE was published against a package already in the lockfile.
 
 **Planned but not yet added:**
 
-- ESLint step (referenced in `package.json` scripts but not wired into CI)
-- Full end-to-end test (booking → seat hold → payment → confirmed) against a running docker-compose stack
+- Full end-to-end test (booking → seat hold → payment → confirmed) against a running stack
+- Scheduled Trivy scan, so a new CVE shows up before it blocks an unrelated push
 
 ---
 
@@ -1298,9 +1392,14 @@ Promtail is discontinued upstream; Alloy is its replacement and is what's actual
 
 ### Dashboards (Grafana, file-provisioned)
 
-- **Booking Service Overview :** HTTP request rate/latency, booking creation rate, live log stream, filtered to `compose_service="booking-service"`.
+docker-compose provisions them from `infra/observability/grafana/dashboards/`, Kubernetes from ConfigMaps labelled `grafana_dashboard: "1"` (`k8s/observability/grafana/dashboards-configmaps.yaml`) picked up by Grafana's sidecar.
+
+- **Booking Service Overview :** HTTP request rate/latency, live log stream (compose filters on `compose_service`, k8s on the `app` / `container` labels).
 - **System Logs:** cross-service log volume and error rate, with `service` and `level` template variables for filtering.
-- **Request Traffic :** general HTTP metrics dashboard.
+- **NodeJS Application Dashboard :** per-instance process CPU, memory, heap, event loop lag, active handles and restarts.
+- **Logs / App** (k8s only): log explorer per app.
+
+On k8s, Prometheus scrapes the services through a `ServiceMonitor` (`k8s/observability/servicemonitor-ticketing.yaml`) that matches the 5 services' `app` label and `http` port in `default`.
 
 ### Health checks
 
@@ -1433,11 +1532,42 @@ directly: these tables reached millions of rows across repeated test runs~~
 
 **Tradeoff:** No cross-service joins. Shared data must be passed via events or cached locally (e.g. event metadata in Booking's Redis).
 
+**Revisited (Sept 2026):** consolidating the 5 Postgres instances into one instance (separate database + role per service) was built, measured and reverted.
+
+---
+
+### ADR-005 - GitOps deployment with ArgoCD (pull-based)
+
+**Decision:** A single ArgoCD `Application` syncs `k8s/` from `main` with automated prune + self-heal. CI has no cluster credentials.
+
+**Why:** Push based deploys needed a kubeconfig or cloud credentials stored as Github secrets, with pull, the cluster's own ArgoCD reads a public repo, so a compromised workflow can't touch the cluster. Git acting as the source of truth so `selfHeal` reverts manual `kubectl` drift. Ordering also comes built in with sync waves.
+
+**Tradeoff:** ArgoCD polls git about every 3 minutes by default, and there's no webhook on Kind because there's no public URL. Secrets live outside GitOps: secret.local.yaml is applied by hand, so the cluster isn't fully reproducible from git yet.
+
+---
+
+### ADR-006 - Immutable `sha-<commit>` image tags, bumped by a CI commit
+
+**Decision:** Manifests pin `sha-<commit>` tags (no `latest`, no `imagePullPolicy`), and CI commits the tag bump back to `main` after all 5 images are pushed.
+
+**Why:** A new `latest` image changes nothing in git, so ArgoCD never rolls it out. A SHA tag maps every running pod to exactly one commit, and rollback is a `git revert`.
+
+**Tradeoff:** A bot commits to `main` on every release, which clashes with branch protection. Every code commit rolls all 5 services, even if only one changed.
+
+---
+
+### ADR-007 - Blocking Trivy gate before images are pushed
+
+**Decision:** Every image is scanned before push, and the pipeline fails on any fixable CRITICAL/HIGH CVE.
+
+**Why:** A vulnerable image never reaches the registry, so ArgoCD can't deploy it. Only fixable CVEs fail the build, so every failure is actionable.
+
+**Tradeoff:** Newly published CVEs fail unrelated pushes (4 times so far, none caused by the commit itself). No reachability analysis, it flags code the app never runs.
+
 ---
 
 ## 19. Future Steps
 
 ### Immediate next steps
 
-1. **Wire Up ESLint to CI**
-2. **Figure out Affordable Cloud Deployment / Cloud Demo solution**
+1. **AKS cluster in Terraform:** state to an Azure Blob backend first, then the cluster on AKS's own managed VNet (Free tier, one node pool), then ArgoCD + the same `Application` on it
