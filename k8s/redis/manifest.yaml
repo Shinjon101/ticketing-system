@@ -32,8 +32,19 @@ spec:
       containers:
         - name: redis
           image: redis:7-alpine
+          args:
+            - "--maxmemory"
+            - "192mb"
+            - "--maxmemory-policy"
+            - "volatile-lru"
           ports:
             - containerPort: 6379
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              memory: "256Mi"
           volumeMounts:
             - name: data
               mountPath: /data
@@ -52,7 +63,6 @@ spec:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: standard
         resources:
           requests:
             storage: 512Mi

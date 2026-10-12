@@ -33,6 +33,12 @@ spec:
           image: postgres:16-alpine
           ports:
             - containerPort: 5432
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              memory: "512Mi"
           envFrom:
             - configMapRef:
                 name: payment-db-config
@@ -57,7 +63,6 @@ spec:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: standard
         resources:
           requests:
             storage: 1Gi   

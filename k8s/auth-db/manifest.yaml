@@ -38,7 +38,12 @@ spec:
                 name: auth-db-config
             - secretRef:
                 name: auth-db-secrets
-
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              memory: "512Mi"
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
@@ -57,7 +62,6 @@ spec:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: standard
         resources:
           requests:
             storage: 1Gi   

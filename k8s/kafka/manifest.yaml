@@ -37,7 +37,7 @@ spec:
     spec:
       containers:
         - name: kafka
-          image: apache/kafka:latest
+          image: apache/kafka:4.3.1
           ports:
             - containerPort: 9092
             - containerPort: 9093
@@ -53,8 +53,13 @@ spec:
               port: 9092
             initialDelaySeconds: 10
             periodSeconds: 10
-            failureThreshold: 12       
-          # Swapped to tcpSocket: Instant, zero-overhead check
+            failureThreshold: 12   
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "1Gi"
+            limits:
+              memory: "1536Mi"
           readinessProbe:
             tcpSocket:
               port: 9092
@@ -74,7 +79,6 @@ spec:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: standard
         resources:
           requests:
             storage: 2Gi
