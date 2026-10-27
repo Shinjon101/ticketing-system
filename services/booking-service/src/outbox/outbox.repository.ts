@@ -1,12 +1,10 @@
 import { eq, inArray } from "@ticketing/db";
-import { db } from "@/db";
+import type { Tx } from "@/db";
 import {
   outboxEvents,
   type NewOutboxEvent,
   type OutboxEvent,
 } from "./outbox.table";
-
-type Tx = typeof db;
 
 export const outboxRepository = {
   createWithTx: async (tx: Tx, data: NewOutboxEvent): Promise<OutboxEvent> => {

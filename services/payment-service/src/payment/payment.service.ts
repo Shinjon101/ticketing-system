@@ -31,7 +31,7 @@ export const paymentService = {
     } = msg;
 
     await db.transaction(async (tx) => {
-      await holdRepository.upsertWithTx(tx as typeof db, {
+      await holdRepository.upsertWithTx(tx, {
         bookingId,
         userId,
         eventId,
@@ -43,7 +43,7 @@ export const paymentService = {
       });
 
       await holdRepository.markProcessedWithTx(
-        tx as typeof db,
+        tx,
         messageId,
         TOPICS.BOOKING_SEAT_HELD,
       );
@@ -87,7 +87,7 @@ export const paymentService = {
     });
 
     await db.transaction(async (tx) => {
-      await paymentRepository.createWithTx(tx as typeof db, {
+      await paymentRepository.createWithTx(tx, {
         bookingId,
         razorpayOrderId: order.id,
         amount: hold.amount,
@@ -232,13 +232,13 @@ async function completeCapturedPayment(params: {
     const amount = result[0].amount;
 
     await paymentRepository.markCapturedWithTx(
-      tx as typeof db,
+      tx,
       razorpayOrderId,
       razorpayPaymentId,
       razorpaySignature,
     );
 
-    await outboxRepository.createWithTx(tx as typeof db, {
+    await outboxRepository.createWithTx(tx, {
       topic: TOPICS.PAYMENT_COMPLETED,
       payload: {
         messageId: crypto.randomUUID(),
@@ -282,7 +282,7 @@ async function publishPaymentFailed(
     }
     updated = true;
 
-    await outboxRepository.createWithTx(tx as typeof db, {
+    await outboxRepository.createWithTx(tx, {
       topic: TOPICS.PAYMENT_FAILED,
       payload: {
         messageId: crypto.randomUUID(),

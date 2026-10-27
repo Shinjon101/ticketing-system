@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { logger } from "@/config/logger";
 import { outboxRepository } from "./outbox.repository";
-import type { KafkaProducer, Topic } from "@ticketing/kafka-client";
+import type { KafkaProducer } from "@ticketing/kafka-client";
 
 const POLL_INTERVAL_MS = 150;
 const BATCH_SIZE = 100;
@@ -29,23 +29,16 @@ export function stopOutboxPoller(): void {
 async function poll(producer: KafkaProducer): Promise<void> {
   try {
     await db.transaction(async (tx) => {
-      const rows = await outboxRepository.fetchUnpublishedBatch(
-        tx as typeof db,
-        BATCH_SIZE,
-      );
+      const rows = await outboxRepository.fetchUnpublishedBatch(tx, BATCH_SIZE);
 
       if (rows.length === 0) return;
 
       for (const row of rows) {
-        await producer.publish(
-          row.topic as Topic,
-          row.payload as Record<string, unknown>,
-          (row.payload as Record<string, string>).bookingId,
-        );
+        await producer.publish(row.topic, row.payload, row.payload.bookingId);
       }
 
       await outboxRepository.markPublished(
-        tx as typeof db,
+        tx,
         rows.map((r) => r.id),
       );
 

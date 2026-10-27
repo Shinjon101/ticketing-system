@@ -30,6 +30,15 @@ export default defineConfig(
       ],
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-namespace": ["error", { allowDeclarations: true }],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "TSAsExpression[typeAnnotation.type='TSTypeQuery'][typeAnnotation.exprName.name='db']",
+          message:
+            "Don't cast to `typeof db`. Type the parameter as `Tx` from @/db instead.",
+        },
+      ],
     },
   },
 

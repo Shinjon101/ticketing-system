@@ -81,7 +81,7 @@ export const bookingService = {
 
     try {
       await db.transaction(async (tx) => {
-        booking = await bookingRepository.createWithTx(tx as typeof db, {
+        booking = await bookingRepository.createWithTx(tx, {
           userId,
           eventId,
           quantity,
@@ -90,7 +90,7 @@ export const bookingService = {
           idempotencyKey,
         });
 
-        await outboxRepository.createWithTx(tx as typeof db, {
+        await outboxRepository.createWithTx(tx, {
           topic: TOPICS.SEAT_RESERVE_REQUESTED,
           payload: {
             messageId: crypto.randomUUID(),
@@ -128,23 +128,16 @@ export const bookingService = {
     const expiresAt = new Date(Date.now() + HOLD_DURATION_MS).toISOString();
 
     const updatedBooking = await db.transaction(async (tx) => {
-      const booking = await bookingRepository.findByIdWithTx(
-        tx as typeof db,
-        bookingId,
-      );
+      const booking = await bookingRepository.findByIdWithTx(tx, bookingId);
       if (!booking) return undefined;
 
-      const updated = await bookingRepository.updateWithTx(
-        tx as typeof db,
-        bookingId,
-        {
-          status: "seat_held",
-          seatIds,
-          seatNumbers,
-        },
-      );
+      const updated = await bookingRepository.updateWithTx(tx, bookingId, {
+        status: "seat_held",
+        seatIds,
+        seatNumbers,
+      });
 
-      await outboxRepository.createWithTx(tx as typeof db, {
+      await outboxRepository.createWithTx(tx, {
         topic: TOPICS.BOOKING_SEAT_HELD,
         payload: {
           messageId: crypto.randomUUID(),
@@ -159,7 +152,7 @@ export const bookingService = {
       });
 
       await bookingRepository.markProcessedWithTx(
-        tx as typeof db,
+        tx,
         messageId,
         TOPICS.SEAT_RESERVED,
       );
@@ -174,16 +167,12 @@ export const bookingService = {
     if (await bookingRepository.isProcessed(messageId)) return;
 
     const updatedBooking = await db.transaction(async (tx) => {
-      const updated = await bookingRepository.updateWithTx(
-        tx as typeof db,
-        bookingId,
-        {
-          status: "failed",
-        },
-      );
+      const updated = await bookingRepository.updateWithTx(tx, bookingId, {
+        status: "failed",
+      });
 
       await bookingRepository.markProcessedWithTx(
-        tx as typeof db,
+        tx,
         messageId,
         TOPICS.SEAT_FAILED,
       );
@@ -201,15 +190,11 @@ export const bookingService = {
     if (await bookingRepository.isProcessed(messageId)) return;
 
     const updatedBooking = await db.transaction(async (tx) => {
-      const updated = await bookingRepository.updateWithTx(
-        tx as typeof db,
-        bookingId,
-        {
-          status: "confirmed",
-        },
-      );
+      const updated = await bookingRepository.updateWithTx(tx, bookingId, {
+        status: "confirmed",
+      });
       await bookingRepository.markProcessedWithTx(
-        tx as typeof db,
+        tx,
         messageId,
         TOPICS.PAYMENT_COMPLETED,
       );
@@ -227,22 +212,15 @@ export const bookingService = {
     if (await bookingRepository.isProcessed(messageId)) return;
 
     const updatedBooking = await db.transaction(async (tx) => {
-      const booking = await bookingRepository.findByIdWithTx(
-        tx as typeof db,
-        bookingId,
-      );
+      const booking = await bookingRepository.findByIdWithTx(tx, bookingId);
       if (!booking) return undefined;
 
-      const updated = await bookingRepository.updateWithTx(
-        tx as typeof db,
-        bookingId,
-        {
-          status: "failed",
-        },
-      );
+      const updated = await bookingRepository.updateWithTx(tx, bookingId, {
+        status: "failed",
+      });
 
       if (booking.seatIds && booking.seatIds.length > 0) {
-        await outboxRepository.createWithTx(tx as typeof db, {
+        await outboxRepository.createWithTx(tx, {
           topic: TOPICS.SEAT_RELEASE,
           payload: {
             messageId: crypto.randomUUID(),
@@ -259,7 +237,7 @@ export const bookingService = {
       }
 
       await bookingRepository.markProcessedWithTx(
-        tx as typeof db,
+        tx,
         messageId,
         TOPICS.PAYMENT_FAILED,
       );

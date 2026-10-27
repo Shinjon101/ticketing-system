@@ -1,5 +1,5 @@
 import { env } from "@/config/env";
-import { createDb } from "@ticketing/db";
+import { createDb, type DbTransaction } from "@ticketing/db";
 import * as schema from "./schema";
 import logger from "@/config/logger";
 
@@ -17,3 +17,5 @@ export const { connectDB, db, disconnectDB, getPoolStats } = createDb({
     retryDelayMs: 1_000,
   },
 });
+
+export type Tx = DbTransaction<typeof schema>;

@@ -34,7 +34,7 @@ const seedHoldAndPayment = async (
   const razorpayOrderId = `order_${randomUUID()}`;
 
   await db.transaction((tx) =>
-    holdRepository.upsertWithTx(tx as typeof db, {
+    holdRepository.upsertWithTx(tx, {
       bookingId,
       userId,
       eventId: randomUUID(),
@@ -47,7 +47,7 @@ const seedHoldAndPayment = async (
     }),
   );
   await db.transaction((tx) =>
-    paymentRepository.createWithTx(tx as typeof db, {
+    paymentRepository.createWithTx(tx, {
       bookingId,
       razorpayOrderId,
       amount: 5000,

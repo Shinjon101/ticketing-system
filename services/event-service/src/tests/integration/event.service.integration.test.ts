@@ -49,8 +49,8 @@ describe("eventService.create : outbox transactional integrity against a real DB
       .where(eq(outboxEvents.topic, TOPICS.EVENT_CREATED));
     expect(outboxRow).toBeDefined();
     expect(outboxRow.published).toBe(false);
-    expect((outboxRow.payload as { eventId: string }).eventId).toBe(created.id);
-    expect((outboxRow.payload as { totalSeats: number }).totalSeats).toBe(100);
+    expect(outboxRow.payload.eventId).toBe(created.id);
+    expect(outboxRow.payload.totalSeats).toBe(100);
   });
 });
 

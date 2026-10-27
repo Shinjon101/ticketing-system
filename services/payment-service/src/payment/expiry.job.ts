@@ -52,7 +52,7 @@ export async function runExpiryCheck(): Promise<void> {
             ),
           );
 
-        await outboxRepository.createWithTx(tx as typeof db, {
+        await outboxRepository.createWithTx(tx, {
           topic: TOPICS.PAYMENT_FAILED,
           payload: {
             messageId: crypto.randomUUID(),

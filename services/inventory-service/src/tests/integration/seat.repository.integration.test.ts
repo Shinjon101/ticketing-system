@@ -16,17 +16,12 @@ describe("seatRepository.pickAndLockSeats: concurrency correctness", () => {
   it("never assigns the same seat to two concurrent requests", async () => {
     const eventId = randomUUID();
     await db.transaction((tx) =>
-      seatRepository.seedSeatsWithTx(tx as typeof db, eventId, 10),
+      seatRepository.seedSeatsWithTx(tx, eventId, 10),
     );
 
     const attempts = Array.from({ length: 20 }, (_, i) =>
       db.transaction((tx) =>
-        seatRepository.pickAndLockSeats(
-          tx as typeof db,
-          eventId,
-          `booking-${i}`,
-          1,
-        ),
+        seatRepository.pickAndLockSeats(tx, eventId, `booking-${i}`, 1),
       ),
     );
 
@@ -50,19 +45,14 @@ describe("seatRepository.pickAndLockSeats: concurrency correctness", () => {
   it("is all-or-nothing per request when demand exceeds supply", async () => {
     const eventId = randomUUID();
     await db.transaction((tx) =>
-      seatRepository.seedSeatsWithTx(tx as typeof db, eventId, 5),
+      seatRepository.seedSeatsWithTx(tx, eventId, 5),
     );
 
     // 3x2 = 6 seats requested, but only 5 available.
 
     const attempts = Array.from({ length: 3 }, (_, i) =>
       db.transaction((tx) =>
-        seatRepository.pickAndLockSeats(
-          tx as typeof db,
-          eventId,
-          `booking-${i}`,
-          2,
-        ),
+        seatRepository.pickAndLockSeats(tx, eventId, `booking-${i}`, 2),
       ),
     );
     const results = await Promise.all(attempts);
@@ -81,30 +71,20 @@ describe("seat state machine transitions", () => {
   it("markBookedWithTx only books seats held by the given booking", async () => {
     const eventId = randomUUID();
     await db.transaction((tx) =>
-      seatRepository.seedSeatsWithTx(tx as typeof db, eventId, 4),
+      seatRepository.seedSeatsWithTx(tx, eventId, 4),
     );
 
     await Promise.all([
       db.transaction((tx) =>
-        seatRepository.pickAndLockSeats(
-          tx as typeof db,
-          eventId,
-          "booking-a",
-          2,
-        ),
+        seatRepository.pickAndLockSeats(tx, eventId, "booking-a", 2),
       ),
       db.transaction((tx) =>
-        seatRepository.pickAndLockSeats(
-          tx as typeof db,
-          eventId,
-          "booking-b",
-          2,
-        ),
+        seatRepository.pickAndLockSeats(tx, eventId, "booking-b", 2),
       ),
     ]);
 
     const bookedCount = await db.transaction((tx) =>
-      seatRepository.markBookedWithTx(tx as typeof db, "booking-a"),
+      seatRepository.markBookedWithTx(tx, "booking-a"),
     );
 
     expect(bookedCount).toBe(2);
@@ -125,11 +105,11 @@ describe("seat state machine transitions", () => {
   it("releaseSeats only releases seats currently in 'held' state", async () => {
     const eventId = randomUUID();
     await db.transaction((tx) =>
-      seatRepository.seedSeatsWithTx(tx as typeof db, eventId, 2),
+      seatRepository.seedSeatsWithTx(tx, eventId, 2),
     );
 
     const held = await db.transaction((tx) =>
-      seatRepository.pickAndLockSeats(tx as typeof db, eventId, "booking-c", 2),
+      seatRepository.pickAndLockSeats(tx, eventId, "booking-c", 2),
     );
     await db
       .update(seats)
@@ -138,7 +118,7 @@ describe("seat state machine transitions", () => {
 
     const releasedCount = await db.transaction((tx) =>
       seatRepository.releaseSeats(
-        tx as typeof db,
+        tx,
         held.map((s) => s.id),
         eventId,
       ),
@@ -163,7 +143,7 @@ describe("processed_events idempotency", () => {
     const messageId = randomUUID();
     await db.transaction((tx) =>
       seatRepository.markProcessedWithTx(
-        tx as typeof db,
+        tx,
         messageId,
         "seat.reserve_requested",
       ),
@@ -172,7 +152,7 @@ describe("processed_events idempotency", () => {
     await expect(
       db.transaction((tx) =>
         seatRepository.markProcessedWithTx(
-          tx as typeof db,
+          tx,
           messageId,
           "seat.reserve_requested",
         ),

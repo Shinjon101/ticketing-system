@@ -1,5 +1,10 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type {
+  NodePgDatabase,
+  NodePgQueryResultHKT,
+} from "drizzle-orm/node-postgres";
+import type { ExtractTablesWithRelations } from "drizzle-orm";
+import type { PgTransaction } from "drizzle-orm/pg-core";
 import { Pool, type PoolConfig } from "pg";
 import type { Logger } from "pino";
 
@@ -35,6 +40,13 @@ export interface PoolStats {
   waiting: number;
   active: number;
 }
+
+export type DbTransaction<TSchema extends Record<string, unknown>> =
+  PgTransaction<
+    NodePgQueryResultHKT,
+    TSchema,
+    ExtractTablesWithRelations<TSchema>
+  >;
 
 export interface DbClient<TSchema extends Record<string, unknown>> {
   db: NodePgDatabase<TSchema>;

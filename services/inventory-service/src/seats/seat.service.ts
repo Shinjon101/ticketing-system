@@ -19,13 +19,9 @@ export const seatService = {
       return;
     }
     await db.transaction(async (tx) => {
-      await seatRepository.seedSeatsWithTx(
-        tx as typeof db,
-        eventId,
-        totalSeats,
-      );
+      await seatRepository.seedSeatsWithTx(tx, eventId, totalSeats);
       await seatRepository.markProcessedWithTx(
-        tx as typeof db,
+        tx,
         messageId,
         TOPICS.EVENT_CREATED,
       );
@@ -51,13 +47,13 @@ export const seatService = {
 
     await db.transaction(async (tx) => {
       assignedSeats = await seatRepository.pickAndLockSeats(
-        tx as typeof db,
+        tx,
         eventId,
         bookingId,
         quantity,
       );
       await seatRepository.markProcessedWithTx(
-        tx as typeof db,
+        tx,
         messageId,
         TOPICS.SEAT_RESERVE_REQUESTED,
       );
@@ -115,13 +111,9 @@ export const seatService = {
     let released = 0;
 
     await db.transaction(async (tx) => {
-      released = await seatRepository.releaseSeats(
-        tx as typeof db,
-        seatIds,
-        eventId,
-      );
+      released = await seatRepository.releaseSeats(tx, seatIds, eventId);
       await seatRepository.markProcessedWithTx(
-        tx as typeof db,
+        tx,
         messageId,
         TOPICS.SEAT_RELEASE,
       );
@@ -151,12 +143,9 @@ export const seatService = {
 
     let bookedCount = 0;
     await db.transaction(async (tx) => {
-      bookedCount = await seatRepository.markBookedWithTx(
-        tx as typeof db,
-        bookingId,
-      );
+      bookedCount = await seatRepository.markBookedWithTx(tx, bookingId);
       await seatRepository.markProcessedWithTx(
-        tx as typeof db,
+        tx,
         messageId,
         TOPICS.PAYMENT_COMPLETED,
       );

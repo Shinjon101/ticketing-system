@@ -23,13 +23,9 @@ describe("idempotency-key uniqueness", () => {
       idempotencyKey,
     };
 
-    await db.transaction((tx) =>
-      bookingRepository.createWithTx(tx as typeof db, base),
-    );
+    await db.transaction((tx) => bookingRepository.createWithTx(tx, base));
     await expect(
-      db.transaction((tx) =>
-        bookingRepository.createWithTx(tx as typeof db, base),
-      ),
+      db.transaction((tx) => bookingRepository.createWithTx(tx, base)),
     ).rejects.toThrow();
   });
 });

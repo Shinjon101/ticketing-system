@@ -66,9 +66,9 @@ export const eventService = {
     let created!: Event;
 
     await db.transaction(async (tx) => {
-      created = await eventsRepository.createWithTx(tx as typeof db, input);
+      created = await eventsRepository.createWithTx(tx, input);
 
-      await outboxRepository.createWithTx(tx as typeof db, {
+      await outboxRepository.createWithTx(tx, {
         topic: TOPICS.EVENT_CREATED,
         payload: {
           messageId: crypto.randomUUID(),
@@ -98,15 +98,11 @@ export const eventService = {
     let updated!: Event;
 
     await db.transaction(async (tx) => {
-      const result = await eventsRepository.updateWithTx(
-        tx as typeof db,
-        id,
-        input,
-      );
+      const result = await eventsRepository.updateWithTx(tx, id, input);
       if (!result) throw new HttpError(404, "Event not found");
       updated = result;
 
-      await outboxRepository.createWithTx(tx as typeof db, {
+      await outboxRepository.createWithTx(tx, {
         topic: TOPICS.EVENT_UPDATED,
         payload: {
           messageId: crypto.randomUUID(),
@@ -132,13 +128,13 @@ export const eventService = {
     let updated!: Event;
 
     await db.transaction(async (tx) => {
-      const result = await eventsRepository.updateWithTx(tx as typeof db, id, {
+      const result = await eventsRepository.updateWithTx(tx, id, {
         status: "cancelled",
       });
       if (!result) throw new HttpError(404, "Event not found");
       updated = result;
 
-      await outboxRepository.createWithTx(tx as typeof db, {
+      await outboxRepository.createWithTx(tx, {
         topic: TOPICS.EVENT_UPDATED,
         payload: {
           messageId: crypto.randomUUID(),

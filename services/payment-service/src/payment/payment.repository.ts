@@ -1,8 +1,6 @@
-import { db } from "@/db";
+import { db, type Tx } from "@/db";
 import { eq } from "@ticketing/db";
 import { payments, Payment, NewPayment } from "./payment.table";
-
-type Tx = typeof db;
 
 export const paymentRepository = {
   findByOrderId: async (

@@ -1,9 +1,7 @@
-import { db } from "@/db";
+import { db, type Tx } from "@/db";
 import { eq } from "@ticketing/db";
 import { holds, Hold, NewHold } from "./hold.table";
 import { processedEvents } from "@/outbox/processed-events.table";
-
-type Tx = typeof db;
 
 export const holdRepository = {
   findByBookingId: async (bookingId: string): Promise<Hold | undefined> => {

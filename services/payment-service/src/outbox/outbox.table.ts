@@ -1,13 +1,17 @@
 import { boolean, jsonb, pgTable, text, timestamp } from "@ticketing/db";
+import type { Topic } from "@ticketing/kafka-client";
+
+// Every outbox row carries the Kafka partition key the poller publishes with.
+type OutboxPayload = Record<string, unknown> & { bookingId: string };
 
 export const outboxEvents = pgTable("outbox_events", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
 
-  topic: text("topic").notNull(),
+  topic: text("topic").$type<Topic>().notNull(),
 
-  payload: jsonb("payload").notNull(),
+  payload: jsonb("payload").$type<OutboxPayload>().notNull(),
 
   published: boolean("published").notNull().default(false),
 

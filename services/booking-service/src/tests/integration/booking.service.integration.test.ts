@@ -67,7 +67,7 @@ describe("bookingService — Kafka redelivery safety", () => {
   it("a redelivered seat.reserved message does not double-transition or double-queue", async () => {
     const bookingId = randomUUID();
     await db.transaction((tx) =>
-      bookingRepository.createWithTx(tx as typeof db, {
+      bookingRepository.createWithTx(tx, {
         id: bookingId,
         userId: randomUUID(),
         eventId: randomUUID(),
@@ -106,7 +106,7 @@ describe("bookingService.onPaymentFailed — compensation correctness against re
   it("queues a real SEAT_RELEASE row when the booking held seats", async () => {
     const bookingId = randomUUID();
     await db.transaction((tx) =>
-      bookingRepository.createWithTx(tx as typeof db, {
+      bookingRepository.createWithTx(tx, {
         id: bookingId,
         userId: randomUUID(),
         eventId: randomUUID(),
@@ -136,16 +136,13 @@ describe("bookingService.onPaymentFailed — compensation correctness against re
       .from(outboxEvents)
       .where(eq(outboxEvents.topic, TOPICS.SEAT_RELEASE));
     expect(releaseRow).toBeDefined();
-    expect((releaseRow.payload as { seatIds: string[] }).seatIds).toEqual([
-      "seat-1",
-      "seat-2",
-    ]);
+    expect(releaseRow.payload.seatIds).toEqual(["seat-1", "seat-2"]);
   });
 
   it("does not queue SEAT_RELEASE when the booking never held seats", async () => {
     const bookingId = randomUUID();
     await db.transaction((tx) =>
-      bookingRepository.createWithTx(tx as typeof db, {
+      bookingRepository.createWithTx(tx, {
         id: bookingId,
         userId: randomUUID(),
         eventId: randomUUID(),

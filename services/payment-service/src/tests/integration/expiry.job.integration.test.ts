@@ -15,7 +15,7 @@ afterEach(async () => {
 
 const seedHold = (status: "pending" | "completed", expiresAt: Date) =>
   db.transaction((tx) =>
-    holdRepository.upsertWithTx(tx as typeof db, {
+    holdRepository.upsertWithTx(tx, {
       bookingId: randomUUID(),
       userId: randomUUID(),
       eventId: randomUUID(),
@@ -37,7 +37,7 @@ describe("runExpiryCheck", () => {
       .from(outboxEvents)
       .where(eq(outboxEvents.topic, TOPICS.PAYMENT_FAILED));
     expect(rows).toHaveLength(1);
-    expect((rows[0].payload as { reason: string }).reason).toBe("hold_expired");
+    expect(rows[0].payload.reason).toBe("hold_expired");
   });
 
   it("leaves not-yet-expired holds untouched", async () => {

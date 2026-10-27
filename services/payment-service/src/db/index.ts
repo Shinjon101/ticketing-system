@@ -1,6 +1,6 @@
 import { env } from "@/config/env";
 import { logger } from "@/config/logger";
-import { createDb } from "@ticketing/db";
+import { createDb, type DbTransaction } from "@ticketing/db";
 import * as schema from "./schema";
 export const { connectDB, db, disconnectDB, getPoolStats } = createDb({
   connectionString: env.DATABASE_URL,
@@ -14,3 +14,5 @@ export const { connectDB, db, disconnectDB, getPoolStats } = createDb({
   },
   startup: { maxRetries: 3, retryDelayMs: 1_000 },
 });
+
+export type Tx = DbTransaction<typeof schema>;

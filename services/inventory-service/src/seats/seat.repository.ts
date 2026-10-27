@@ -1,9 +1,7 @@
-import { db } from "@/db";
+import { db, type Tx } from "@/db";
 import { eq, and, inArray, count } from "@ticketing/db";
 import { NewSeat, Seat, seats } from "./seat.table";
 import { processedEvents } from "./processed-events.table";
-
-type Tx = typeof db;
 
 export const seatRepository = {
   countAvailable: async (eventId: string): Promise<number> => {
