@@ -4,6 +4,7 @@ import { createKafkaProducer, startKafkaConsumer } from "@/kafka";
 import { createApp } from "@/app";
 import { env } from "@/config/env";
 import { logger } from "@/config/logger";
+import { startOutboxPoller, stopOutboxPoller } from "./outbox/outbox.poller";
 
 const start = async () => {
   await connectDB();
@@ -13,7 +14,9 @@ const start = async () => {
   const producer = createKafkaProducer();
   await producer.connect();
 
-  const stopConsumer = await startKafkaConsumer(producer);
+  void startOutboxPoller(producer);
+
+  const stopConsumer = await startKafkaConsumer();
 
   const app = createApp();
   const server = app.listen(env.PORT, () => {
@@ -28,6 +31,9 @@ const start = async () => {
 
     server.close(async () => {
       logger.info("HTTP server closed");
+
+      stopOutboxPoller();
+      await sleep(2_000);
 
       await stopConsumer();
       await producer.disconnect();
@@ -59,3 +65,6 @@ const start = async () => {
 };
 
 void start();
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));

@@ -1,6 +1,5 @@
 import {
   EventCreated,
-  KafkaProducer,
   PaymentCompleted,
   SeatRelease,
   SeatReserveRequested,
@@ -10,6 +9,7 @@ import { seatRepository } from "./seat.repository";
 import { logger } from "@/config/logger";
 import { db } from "@/db";
 import { seatsCounter } from "@/redis/seat-counter";
+import { outboxRepository } from "@/outbox/outbox.repository";
 
 export const seatService = {
   seedSeats: async (msg: EventCreated): Promise<void> => {
@@ -34,10 +34,7 @@ export const seatService = {
     logger.info({ eventId, totalSeats }, "Seats seeded");
   },
 
-  assignSeats: async (
-    msg: SeatReserveRequested,
-    producer: KafkaProducer,
-  ): Promise<void> => {
+  assignSeats: async (msg: SeatReserveRequested): Promise<void> => {
     const { messageId, bookingId, eventId, quantity } = msg;
 
     if (await seatRepository.isProcessed(messageId)) {
@@ -64,21 +61,34 @@ export const seatService = {
         messageId,
         TOPICS.SEAT_RESERVE_REQUESTED,
       );
+
+      if (assignedSeats.length < quantity) {
+        await outboxRepository.createWithTx(tx, {
+          topic: TOPICS.SEAT_FAILED,
+          payload: {
+            messageId: crypto.randomUUID(),
+            bookingId,
+            reason: quantity > 1 ? "insufficient_seats" : "no_seats_available",
+          },
+        });
+      } else {
+        await outboxRepository.createWithTx(tx, {
+          topic: TOPICS.SEAT_RESERVED,
+          payload: {
+            messageId: crypto.randomUUID(),
+            bookingId,
+            seatIds: assignedSeats.map((s) => s.id),
+            seatNumbers: assignedSeats.map((s) => s.seatNumber),
+            reservedAt: new Date().toISOString(),
+          },
+        });
+      }
     });
 
     if (assignedSeats.length < quantity) {
-      await producer.publish(
-        TOPICS.SEAT_FAILED,
-        {
-          messageId: crypto.randomUUID(),
-          bookingId,
-          reason: quantity > 1 ? "insufficient_seats" : "no_seats_available",
-        },
-        bookingId,
-      );
       logger.info(
         { bookingId, eventId, requested: quantity },
-        "Insufficient seats — seat.failed emitted",
+        "Insufficient seats — seat.failed queued in outbox",
       );
       return;
     }
@@ -87,18 +97,6 @@ export const seatService = {
     for (let i = 0; i < quantity; i++) {
       await seatsCounter.decrement(eventId);
     }
-
-    await producer.publish(
-      TOPICS.SEAT_RESERVED,
-      {
-        messageId: crypto.randomUUID(),
-        bookingId,
-        seatIds: assignedSeats.map((s) => s.id),
-        seatNumbers: assignedSeats.map((s) => s.seatNumber),
-        reservedAt: new Date().toISOString(),
-      },
-      bookingId,
-    );
 
     logger.info(
       { bookingId, eventId, seatIds: assignedSeats.map((s) => s.id) },

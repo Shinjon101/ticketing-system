@@ -184,8 +184,8 @@ For now, Users do not pick a specific seat. They request "X seats for event Y" a
 
 **Produces (Kafka):**
 
-- `seat-reserved` - seat successfully assigned to a booking
-- `seat-failed` - no seats available
+- `seat-reserved` - seat successfully assigned to a booking (via outbox poller)
+- `seat-failed` - no seats available (via outbox poller)
 
 **Consumes (Kafka):**
 
@@ -213,6 +213,9 @@ const rows = await tx
 
 **Why `SKIP LOCKED`**  
 In very high traffic conditions, users all request "any available seat." `SKIP LOCKED` spreads those requests across all available seats. Each transaction takes a different seat instead of everyone fighting over seat 1. Once all seats are held, queries return empty and `seat.failed` is emitted.
+
+**Why the outbox here too**  
+Inventory originally published `seat-reserved`/`seat-failed` straight to Kafka after the seat transaction committed. That is the exact dual-write the outbox exists to prevent: a crash between `COMMIT` and `publish` left seats `held` and the message marked in `processed_events`, so Kafka's redelivery was skipped as a duplicate and the booking sat in `pending` forever with nothing to compensate it. The outbox row is now written in the same transaction as the seat hold and the `processed_events` insert. Inventory's poller runs at 150ms rather than the 500ms the other services use, since it sits on the hottest hop of the saga (see §11.1).
 
 ---
 
@@ -503,7 +506,7 @@ export const TOPICS = {
 
 ### `seat-reserved`
 
-**Producer:** Inventory Service **Consumer:** Booking Service
+**Producer:** Inventory Service (via outbox) **Consumer:** Booking Service
 
 ```typescript
 {
@@ -520,7 +523,7 @@ export const TOPICS = {
 
 ### `seat-failed`
 
-**Producer:** Inventory Service **Consumer:** Booking Service
+**Producer:** Inventory Service (via outbox) **Consumer:** Booking Service
 
 ```typescript
 {
@@ -705,9 +708,12 @@ if (!set) {
        WHERE id = ANY($seatIds)
 
        INSERT INTO processed_events (message_id, topic)
+
+       INSERT INTO outbox_events (topic='seat-reserved',
+         payload={ messageId, bookingId, seatIds, seatNumbers, reservedAt })
      COMMIT
    - DECR seats:available:{eventId} by quantity in Redis
-   - Publish seat-reserved { bookingId, seatIds, seatNumbers }
+   - Inventory outbox poller (every ~150ms) publishes seat-reserved to Kafka
 
 5. Booking Service consumes seat-reserved:
    - SELECT message_id FROM processed_events -> not found
@@ -762,9 +768,15 @@ Steps 1->3 identical.
        SELECT id FROM seats
        WHERE event_id = $eventId AND status = 'available'
        LIMIT $quantity FOR UPDATE SKIP LOCKED
-       -> fewer than $quantity rows returned
-     COMMIT (nothing updated — all-or-nothing)
-   - Publish seat-failed { bookingId, reason: quantity > 1 ? 'insufficient_seats' : 'no_seats_available' }
+       -> fewer than $quantity rows returned (no seats updated — all-or-nothing)
+
+       INSERT INTO processed_events (message_id, topic)
+
+       INSERT INTO outbox_events (topic='seat-failed',
+         payload={ messageId, bookingId, reason: quantity > 1 ? 'insufficient_seats' : 'no_seats_available' })
+     COMMIT
+   - Redis counter untouched (nothing was held)
+   - Inventory outbox poller publishes seat-failed to Kafka
 
 5. Booking Service consumes seat-failed:
    - UPDATE bookings SET status = 'failed'
@@ -887,6 +899,10 @@ LIMIT 100;
 ```
 
 Without `SKIP LOCKED`, two Booking Service replicas would queue up on the same rows. With it, each replica takes a different batch and processes in parallel.
+
+**Used by:** event, booking, payment and inventory services each own an `outbox_events` table and run their own poller.
+
+**Poll interval isn't uniform:** event, booking and payment poll every 500ms; inventory polls every 150ms. Every outbox hop adds up to one poll interval of latency to the saga, and `seat-reserved`/`seat-failed` fire once per booking attempt, including every failed attempt once an event sells out. During a sale that makes it the highest-volume outbox in the system, and it sits directly on the path the user is waiting on. Moving inventory onto the outbox added a hop that used to be a direct publish; 150ms keeps that addition small. The cost is ~7 polls/s per replica when idle.
 
 ---
 
@@ -1025,13 +1041,11 @@ WHERE id IN (
 | ------------------- | ----------------------------------------------- | ----------------- |
 | `booking-service`   | `outbox_events` (published), `processed_events` | 7d / 14d          |
 | `event-service`     | `outbox_events` (published)                     | 7d                |
-| `inventory-service` | `processed_events`                              | 14d               |
+| `inventory-service` | `outbox_events` (published), `processed_events` | 7d / 14d          |
 | `payment-service`   | `outbox_events` (published), `processed_events` | 7d / 14d          |
 
 `event-service` has no `processed_events` table since it doesn't consume
-any Kafka topics. `inventory-service` publishes directly via the Kafka
-producer rather than the outbox pattern, so it has no `outbox_events`
-table.
+any Kafka topics.
 
 **Kubernetes CronJob configuration:**
 
@@ -1511,6 +1525,8 @@ directly: these tables reached millions of rows across repeated test runs~~
 **Why:** Eliminates the dual-write problem. The DB transaction is atomic - either both the booking and the outbox row are written, or neither is.
 
 **Tradeoff:** Small latency added by the poller interval (~200ms). Outbox table needs periodic cleanup of old published rows.
+
+**Revisited:** Inventory was originally exempt and published `seat-reserved`/`seat-failed` directly, which reintroduced the dual-write on the saga's most contended hop. It now uses the outbox like every other producer, with a shorter 150ms poll interval to offset the added hop (§11.1).
 
 ---
 

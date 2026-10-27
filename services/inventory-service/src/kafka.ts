@@ -19,9 +19,9 @@ export const createKafkaProducer = (): KafkaProducer =>
     logger,
   });
 
-export const startKafkaConsumer = async (
-  producer: KafkaProducer,
-): Promise<() => Promise<void>> => {
+export const startKafkaConsumer = async (): Promise<
+  () => Promise<void>
+> => {
   const consumer = createConsumer({
     brokers: env.KAFKA_BROKERS.split(","),
     clientId: "inventory-service",
@@ -35,7 +35,7 @@ export const startKafkaConsumer = async (
     },
 
     [TOPICS.SEAT_RESERVE_REQUESTED]: async (msg: SeatReserveRequested) => {
-      await seatService.assignSeats(msg, producer);
+      await seatService.assignSeats(msg);
     },
 
     [TOPICS.SEAT_RELEASE]: async (msg: SeatRelease) => {

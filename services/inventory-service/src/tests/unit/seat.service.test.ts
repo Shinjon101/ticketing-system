@@ -21,8 +21,10 @@ vi.mock("@/redis/index", () => ({
   },
 }));
 
+const { fakeTx } = vi.hoisted(() => ({ fakeTx: {} }));
+
 vi.mock("@/db", () => ({
-  db: { transaction: vi.fn((cb: any) => cb({})) },
+  db: { transaction: vi.fn((cb: any) => cb(fakeTx)) },
 }));
 
 vi.mock("@/seats/seat.repository", () => ({
@@ -33,16 +35,18 @@ vi.mock("@/seats/seat.repository", () => ({
   },
 }));
 
+vi.mock("@/outbox/outbox.repository", () => ({
+  outboxRepository: {
+    createWithTx: vi.fn(),
+  },
+}));
+
 import { randomUUID } from "crypto";
 import { seatService } from "@/seats/seat.service";
 import { seatRepository } from "@/seats/seat.repository";
+import { outboxRepository } from "@/outbox/outbox.repository";
+import { seatsCounter } from "@/redis/seat-counter";
 import { TOPICS } from "@ticketing/kafka-client";
-
-const createMockProducer = () => ({
-  publish: vi.fn().mockResolvedValue(undefined),
-  connect: vi.fn(),
-  disconnect: vi.fn(),
-});
 
 describe("seatService.assignSeats — orchestration logic", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -55,61 +59,100 @@ describe("seatService.assignSeats — orchestration logic", () => {
     requestedAt: new Date().toISOString(),
   };
 
-  it("publishes SEAT_RESERVED with the assigned seats on success", async () => {
+  it("writes SEAT_RESERVED to the outbox with the assigned seats on success", async () => {
     vi.mocked(seatRepository.isProcessed).mockResolvedValue(false);
     vi.mocked(seatRepository.pickAndLockSeats).mockResolvedValue([
       { id: "seat-1", seatNumber: "Seat 1" } as any,
     ]);
 
-    const producer = createMockProducer();
-    await seatService.assignSeats({ ...baseMsg, quantity: 1 }, producer);
+    await seatService.assignSeats({ ...baseMsg, quantity: 1 });
 
-    expect(producer.publish).toHaveBeenCalledWith(
-      TOPICS.SEAT_RESERVED,
-      expect.objectContaining({
+    expect(outboxRepository.createWithTx).toHaveBeenCalledWith(fakeTx, {
+      topic: TOPICS.SEAT_RESERVED,
+      payload: expect.objectContaining({
         bookingId: baseMsg.bookingId,
         seatIds: ["seat-1"],
         seatNumbers: ["Seat 1"],
       }),
-      baseMsg.bookingId,
-    );
+    });
+    expect(seatsCounter.decrement).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes the outbox row in the same transaction as the seat hold", async () => {
+    vi.mocked(seatRepository.isProcessed).mockResolvedValue(false);
+    vi.mocked(seatRepository.pickAndLockSeats).mockResolvedValue([
+      { id: "seat-1", seatNumber: "Seat 1" } as any,
+    ]);
+
+    await seatService.assignSeats({ ...baseMsg, quantity: 1 });
+
+    const [pickTx] = vi.mocked(seatRepository.pickAndLockSeats).mock.calls[0]!;
+    const [processedTx] = vi.mocked(seatRepository.markProcessedWithTx).mock
+      .calls[0]!;
+    const [outboxTx] = vi.mocked(outboxRepository.createWithTx).mock.calls[0]!;
+
+    expect(pickTx).toBe(fakeTx);
+    expect(processedTx).toBe(fakeTx);
+    expect(outboxTx).toBe(fakeTx);
   });
 
   it("reports 'no_seats_available' when a single-seat request fails", async () => {
     vi.mocked(seatRepository.isProcessed).mockResolvedValue(false);
     vi.mocked(seatRepository.pickAndLockSeats).mockResolvedValue([]);
 
-    const producer = createMockProducer();
-    await seatService.assignSeats({ ...baseMsg, quantity: 1 }, producer);
+    await seatService.assignSeats({ ...baseMsg, quantity: 1 });
 
-    expect(producer.publish).toHaveBeenCalledWith(
-      TOPICS.SEAT_FAILED,
-      expect.objectContaining({ reason: "no_seats_available" }),
-      baseMsg.bookingId,
-    );
+    expect(outboxRepository.createWithTx).toHaveBeenCalledWith(fakeTx, {
+      topic: TOPICS.SEAT_FAILED,
+      payload: expect.objectContaining({
+        bookingId: baseMsg.bookingId,
+        reason: "no_seats_available",
+      }),
+    });
   });
 
   it("reports 'insufficient_seats' when a multi-seat request can't be fully satisfied", async () => {
     vi.mocked(seatRepository.isProcessed).mockResolvedValue(false);
     vi.mocked(seatRepository.pickAndLockSeats).mockResolvedValue([]);
 
-    const producer = createMockProducer();
-    await seatService.assignSeats({ ...baseMsg, quantity: 4 }, producer);
+    await seatService.assignSeats({ ...baseMsg, quantity: 4 });
 
-    expect(producer.publish).toHaveBeenCalledWith(
-      TOPICS.SEAT_FAILED,
-      expect.objectContaining({ reason: "insufficient_seats" }),
-      baseMsg.bookingId,
+    expect(outboxRepository.createWithTx).toHaveBeenCalledWith(fakeTx, {
+      topic: TOPICS.SEAT_FAILED,
+      payload: expect.objectContaining({ reason: "insufficient_seats" }),
+    });
+  });
+
+  it("does not decrement the seat counter when the request fails", async () => {
+    vi.mocked(seatRepository.isProcessed).mockResolvedValue(false);
+    vi.mocked(seatRepository.pickAndLockSeats).mockResolvedValue([]);
+
+    await seatService.assignSeats({ ...baseMsg, quantity: 4 });
+
+    expect(seatsCounter.decrement).not.toHaveBeenCalled();
+  });
+
+  it("propagates an outbox write failure so the message is redelivered", async () => {
+    vi.mocked(seatRepository.isProcessed).mockResolvedValue(false);
+    vi.mocked(seatRepository.pickAndLockSeats).mockResolvedValue([
+      { id: "seat-1", seatNumber: "Seat 1" } as any,
+    ]);
+    vi.mocked(outboxRepository.createWithTx).mockRejectedValueOnce(
+      new Error("db down"),
     );
+
+    await expect(
+      seatService.assignSeats({ ...baseMsg, quantity: 1 }),
+    ).rejects.toThrow("db down");
+    expect(seatsCounter.decrement).not.toHaveBeenCalled();
   });
 
   it("does nothing when the message was already processed", async () => {
     vi.mocked(seatRepository.isProcessed).mockResolvedValue(true);
 
-    const producer = createMockProducer();
-    await seatService.assignSeats({ ...baseMsg, quantity: 1 }, producer);
+    await seatService.assignSeats({ ...baseMsg, quantity: 1 });
 
     expect(seatRepository.pickAndLockSeats).not.toHaveBeenCalled();
-    expect(producer.publish).not.toHaveBeenCalled();
+    expect(outboxRepository.createWithTx).not.toHaveBeenCalled();
   });
 });
