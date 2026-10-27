@@ -36,7 +36,7 @@ spec:
     spec:
       containers:
         - name: inventory-service
-          image: ghcr.io/shinjon101/ticketing-inventory-service:sha-ae00b2b
+          image: ghcr.io/shinjon101/ticketing-inventory-service:sha-6acff71
           ports:
             - containerPort: 4006
           envFrom:
