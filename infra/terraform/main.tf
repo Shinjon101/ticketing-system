@@ -26,11 +26,12 @@ resource "azurerm_kubernetes_cluster" "main" {
   }
 
   default_node_pool {
-    name       = "default"
-    node_count = 2
-    vm_size    = var.aks_vm_size
-    max_count  = 3
-    min_count  = 2
+    name                 = "default"
+    node_count           = 2
+    vm_size              = var.aks_vm_size
+    auto_scaling_enabled = true
+    max_count            = 3
+    min_count            = 2
   }
 
   identity {
