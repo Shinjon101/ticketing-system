@@ -14,7 +14,7 @@ spec:
         spec:
           containers:
           - name: cleanup
-            image: ghcr.io/shinjon101/ticketing-event-service:sha-cea4c8f
+            image: ghcr.io/shinjon101/ticketing-event-service:sha-c8e921a
             command: ["node", "dist/db/cleanup.js"]
             envFrom:
               - secretRef: { name: event-service-secrets }
