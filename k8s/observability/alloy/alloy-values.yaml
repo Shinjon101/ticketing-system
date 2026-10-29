@@ -4,6 +4,10 @@ alloy:
   mounts:
     varlog: true
 
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
   configMap:
     create: true
     content: |
@@ -31,6 +35,13 @@ alloy:
           source_labels = ["__path__"]
           regex         = "^/var/log/pods/([^_]+)_.*"
           target_label  = "namespace"
+        }
+
+        // Ship only the app's logs, not kube-system/observability/argocd
+        rule {
+          source_labels = ["namespace"]
+          regex         = "default"
+          action        = "keep"
         }
 
         // Extract Pod Name (second segment between underscores)

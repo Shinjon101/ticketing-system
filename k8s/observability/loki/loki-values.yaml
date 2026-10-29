@@ -13,7 +13,21 @@ singleBinary:
   persistence:
     enabled: true
     size: 2Gi
-    storageClass: standard  
+    storageClass: null
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }
+
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+lokiCanary:
+  enabled: false
+gateway:
+  enabled: false
+test:
+  enabled: false
 
 loki:
   auth_enabled: false
