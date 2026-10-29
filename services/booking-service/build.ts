@@ -25,3 +25,9 @@ await build({
   entryPoints: ["src/db/cleanup.ts"],
   outfile: "dist/db/cleanup.js",
 });
+
+await build({
+  ...common,
+  entryPoints: ["src/dlq-replay.ts"],
+  outfile: "dist/dlq-replay.js",
+});

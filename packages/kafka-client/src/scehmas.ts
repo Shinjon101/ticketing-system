@@ -113,3 +113,15 @@ export const TOPIC_SCHEMAS = {
   [TOPICS.PAYMENT_COMPLETED]: PaymentCompletedSchema,
   [TOPICS.PAYMENT_FAILED]: PaymentFailedSchema,
 } as const;
+
+export const DlqMessageSchema = z.object({
+  originalTopic: z.enum(TOPICS),
+  originalKey: z.string().nullable().optional(),
+  originalValue: z.string(),
+  error: z.string(),
+  errorStack: z.string().optional(),
+  attempts: z.number().int().positive().optional(),
+  failedAt: z.iso.datetime(),
+});
+
+export type DlqMessage = z.infer<typeof DlqMessageSchema>;

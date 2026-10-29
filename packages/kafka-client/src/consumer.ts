@@ -1,7 +1,7 @@
 import { EachMessagePayload, Kafka, type Consumer } from "kafkajs";
 import { type Logger } from "pino";
 import z from "zod";
-import { TOPIC_SCHEMAS } from "./scehmas";
+import { TOPIC_SCHEMAS, type DlqMessage } from "./scehmas";
 import { toDlqTopic, Topic } from "./topics";
 import { createProducer, KafkaProducer } from "./producer";
 import { correlationFields } from "./correlation";
@@ -15,11 +15,22 @@ type DlqReason =
 const toError = (err: unknown): Error =>
   err instanceof Error ? err : new Error(String(err));
 
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+export interface RetryOptions {
+  attempts: number;
+  baseDelayMs: number;
+}
+
+const DEFAULT_RETRY: RetryOptions = { attempts: 3, baseDelayMs: 200 };
+
 export interface ConsumerFactoryConfig {
   brokers: string[];
   clientId: string;
   groupId: string;
   logger: Logger;
+  retry?: RetryOptions;
 }
 
 export type MessageHandler<T> = (
@@ -38,6 +49,11 @@ export interface KafkaConsumer {
 
 export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
   const { brokers, clientId, groupId, logger } = config;
+  const retry = config.retry ?? DEFAULT_RETRY;
+
+  if (retry.attempts < 1) {
+    throw new Error("retry.attempts must be at least 1");
+  }
 
   const kafka = new Kafka({
     clientId,
@@ -72,40 +88,37 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
     log: Logger,
     reason: DlqReason,
     topic: Topic,
+    key: string | null,
     rawValue: string,
     error: Error,
-    retryCount: number,
+    attempts: number,
   ): Promise<void> => {
     const dlqTopic = toDlqTopic(topic);
+    const dlqMessage: DlqMessage = {
+      originalTopic: topic,
+      originalKey: key,
+      originalValue: rawValue,
+      error: error.message,
+      errorStack: error.stack,
+      attempts,
+      failedAt: new Date().toISOString(),
+    };
 
     try {
       const dlq = await getDlqProducer();
-
-      await dlq.publish(dlqTopic as Topic, {
-        originalTopic: topic,
-        originalValue: rawValue,
-        error: error.message,
-        errorStack: error.stack,
-        failedAt: new Date().toISOString(),
-        retryCount,
-      });
-
-      log.error(
-        { err: error, reason, dlqTopic, retryCount },
-        "Message sent to DLQ",
-      );
+      await dlq.publish(dlqTopic as Topic, dlqMessage, key ?? undefined);
     } catch (dlqError) {
       log.error(
-        {
-          err: dlqError,
-          reason,
-          dlqTopic,
-          originalError: error.message,
-          valueBytes: rawValue.length,
-        },
-        "Failed to send message to DLQ: message may be lost",
+        { err: dlqError, reason, dlqTopic, originalError: error.message },
+        "Failed to send message to DLQ: leaving it uncommitted for redelivery",
       );
+      throw dlqError;
     }
+
+    log.error(
+      { err: error, reason, dlqTopic, attempts },
+      "Message sent to DLQ",
+    );
   };
 
   const processMessage = async (
@@ -121,10 +134,7 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
     }
 
     const rawValue = message.value.toString();
-
-    const retryCount = message.headers?.["retry-count"]
-      ? parseInt(message.headers["retry-count"].toString(), 10)
-      : 0;
+    const key = message.key?.toString() ?? null;
 
     let parsedPayload: unknown;
 
@@ -135,9 +145,10 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
         log,
         "invalid_json",
         topic as Topic,
+        key,
         rawValue,
         new Error("Invalid JSON"),
-        retryCount,
+        1,
       );
       return;
     }
@@ -149,9 +160,10 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
         log,
         "no_schema",
         topic as Topic,
+        key,
         rawValue,
         new Error(`No schema registered for topic: ${topic}`),
-        retryCount,
+        1,
       );
       return;
     }
@@ -165,9 +177,10 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
         log.child(correlationFields(parsedPayload)),
         "validation_failed",
         topic as Topic,
+        key,
         rawValue,
         toError(validationError),
-        retryCount,
+        1,
       );
       return;
     }
@@ -180,28 +193,42 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
       return;
     }
 
-    const startedAt = Date.now();
+    const meta = { topic, partition, offset: message.offset };
 
-    try {
-      await (handler as MessageHandler<unknown>)(validatedPayload, {
-        topic,
-        partition,
-        offset: message.offset,
-      });
+    for (let attempt = 1; attempt <= retry.attempts; attempt += 1) {
+      const startedAt = Date.now();
 
-      messageLog.debug(
-        { durationMs: Date.now() - startedAt },
-        "Message processed",
-      );
-    } catch (handlerError) {
-      await sendToDlq(
-        messageLog,
-        "handler_failed",
-        topic as Topic,
-        rawValue,
-        toError(handlerError),
-        retryCount + 1,
-      );
+      try {
+        await (handler as MessageHandler<unknown>)(validatedPayload, meta);
+        messageLog.debug(
+          { durationMs: Date.now() - startedAt, attempt },
+          "Message processed",
+        );
+        return;
+      } catch (handlerError) {
+        const error = toError(handlerError);
+
+        if (attempt === retry.attempts) {
+          await sendToDlq(
+            messageLog,
+            "handler_failed",
+            topic as Topic,
+            key,
+            rawValue,
+            error,
+            attempt,
+          );
+          return;
+        }
+
+        const delayMs = retry.baseDelayMs * 2 ** (attempt - 1);
+        messageLog.warn(
+          { err: error, attempt, delayMs },
+          "Handler failed, retrying",
+        );
+        await payload.heartbeat();
+        await sleep(delayMs);
+      }
     }
   };
 

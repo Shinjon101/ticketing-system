@@ -421,6 +421,24 @@ CREATE TABLE processed_events (
 
 All payloads are defined as Zod schemas in `packages/kafka-client/src/scehmas.ts`. Producers get a compile-time error for malformed payloads. Consumers get a runtime validation error and route to a Dead Letter Queue (`{topic}.dlq`).
 
+### Retries and the DLQ
+
+- **Handler errors are retried in place.** A failing handler is called up to 3 times, waiting 200ms then 400ms between attempts, before the message goes to the DLQ. Every error is retried: handlers check `processed_events` and run in one transaction, so a retry either redoes rolled-back work or returns early. The consumer heartbeats before each wait so slow attempts don't trigger a rebalance.
+- **Malformed messages skip retries.** Invalid JSON, an unknown topic, or a schema mismatch goes straight to the DLQ; retrying can't fix it.
+- **DLQ messages keep the original key** (`DlqMessageSchema`: `originalTopic`, `originalKey`, `originalValue`, `error`, `errorStack`, `attempts`, `failedAt`), so a replayed message lands on the same partition as the rest of its booking's events.
+- **A failed DLQ publish throws.** The offset is not committed and Kafka redelivers the message, instead of it being dropped.
+
+### Replaying the DLQ
+
+Fix the cause first, then run the replay from any booking-service pod (it already has `KAFKA_BROKERS`):
+
+```bash
+kubectl exec deploy/booking-service -- node dist/dlq-replay.js seat-reserved
+# locally: KAFKA_BROKERS=localhost:9094 pnpm --filter @ticketing/booking-service dlq:replay seat-reserved
+```
+
+It re-sends each DLQ message to the original topic with its original key, committing its progress in the `dlq-replay` consumer group, so running it again only replays what is new. It only replays messages that were in the DLQ when it started: anything that fails again lands back in the DLQ for the next run instead of looping. It exits after 10 seconds with no messages. Replay is safe to repeat because consumers skip messages already recorded in `processed_events`.
+
 Topic names are defined once in `packages/kafka-client/src/topics.ts`:
 
 ```typescript

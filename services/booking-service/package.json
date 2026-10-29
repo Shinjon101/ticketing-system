@@ -12,6 +12,7 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:cleanup": "tsx src/db/cleanup.ts",
+    "dlq:replay": "tsx src/dlq-replay.ts",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",

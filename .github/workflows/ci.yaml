@@ -78,6 +78,9 @@ jobs:
             echo "JWT_PUBLIC_KEY<<EOF"; cat "$RUNNER_TEMP/jwt.pub"; echo "EOF"
           } >> "$GITHUB_ENV"
 
+      - name: Run kafka-client unit tests
+        run: pnpm --filter @ticketing/kafka-client test
+
       - name: Run auth-service unit tests
         run: pnpm --filter @ticketing/auth-service test
         env:
