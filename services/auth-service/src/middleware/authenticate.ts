@@ -1,5 +1,5 @@
 import { verifyAccessToken } from "@/auth/token.service";
-import { HttpError } from "@ticketing/common";
+import { ForbiddenError, UnauthorizedError } from "@ticketing/common";
 import { NextFunction, Request, Response } from "express";
 
 declare global {
@@ -15,38 +15,39 @@ export const autheticate = (
   _res: Response,
   next: NextFunction,
 ): void => {
-  try {
-    const authHeader = req.headers.authorization;
+  const authHeader = req.headers.authorization;
 
-    if (!authHeader) {
-      throw new HttpError(401, "Authorization header missing");
-    }
-    const parts = authHeader.split(" ");
-    if (parts.length !== 2 || parts[0] !== "Bearer") {
-      throw new HttpError(
-        401,
-        "Authorization header format must be: Bearer <token>",
-      );
-    }
-
-    const token = parts[1];
-    const payload = verifyAccessToken(token);
-
-    req.user = payload;
-    next();
-  } catch (err) {
-    if (err instanceof HttpError) {
-      next(err);
-    } else {
-      next(new HttpError(401, "Invalid or expired token"));
-    }
+  if (!authHeader) {
+    next(new UnauthorizedError("Authorization header missing"));
+    return;
   }
+
+  const parts = authHeader.split(" ");
+  if (parts.length !== 2 || parts[0] !== "Bearer") {
+    next(
+      new UnauthorizedError(
+        "Authorization header format must be: Bearer <token>",
+      ),
+    );
+    return;
+  }
+
+  const token = parts[1];
+
+  try {
+    req.user = verifyAccessToken(token);
+  } catch (err) {
+    next(new UnauthorizedError("Invalid or expired token", { cause: err }));
+    return;
+  }
+
+  next();
 };
 
 export const requireRole = (role: "user" | "admin") => {
   return (req: Request, _res: Response, next: NextFunction): void => {
     if (req.user.role !== role) {
-      next(new HttpError(403, "Insufficient permissions"));
+      next(new ForbiddenError("Insufficient permissions"));
       return;
     }
     next();

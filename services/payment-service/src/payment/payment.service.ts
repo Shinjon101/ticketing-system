@@ -6,7 +6,13 @@ import { BookingSeatHeld, TOPICS } from "@ticketing/kafka-client";
 import Razorpay from "razorpay";
 import { holdRepository } from "./hold.repository";
 import { logger } from "@/config/logger";
-import { HttpError } from "@ticketing/common";
+import {
+  BadRequestError,
+  ConflictError,
+  ForbiddenError,
+  GoneError,
+  NotFoundError,
+} from "@ticketing/common";
 import { paymentRepository } from "./payment.repository";
 import { holds } from "./hold.table";
 import { and, eq } from "@ticketing/db";
@@ -55,14 +61,13 @@ export const paymentService = {
   createOrder: async (bookingId: string, userId: string) => {
     const hold = await holdRepository.findByBookingId(bookingId);
 
-    if (!hold)
-      throw new HttpError(404, "No active hold found for this booking");
-    if (hold.userId !== userId) throw new HttpError(403, "Forbidden");
+    if (!hold) throw new NotFoundError("No active hold found for this booking");
+    if (hold.userId !== userId) throw new ForbiddenError("Forbidden");
     if (hold.status !== "pending") {
-      throw new HttpError(409, `Hold is already ${hold.status}`);
+      throw new ConflictError(`Hold is already ${hold.status}`);
     }
     if (new Date() > hold.expiresAt) {
-      throw new HttpError(410, "Seat hold has expired");
+      throw new GoneError("Seat hold has expired");
     }
 
     if (hold.razorpayOrderId) {
@@ -121,14 +126,14 @@ export const paymentService = {
     razorpaySignature: string,
   ) => {
     const hold = await holdRepository.findByBookingId(bookingId);
-    if (!hold) throw new HttpError(404, "No hold found for this booking");
-    if (hold.userId !== userId) throw new HttpError(403, "Forbidden");
+    if (!hold) throw new NotFoundError("No hold found for this booking");
+    if (hold.userId !== userId) throw new ForbiddenError("Forbidden");
     if (hold.status !== "pending")
-      throw new HttpError(409, `Hold is already ${hold.status}`);
+      throw new ConflictError(`Hold is already ${hold.status}`);
 
     if (new Date() > hold.expiresAt) {
       await publishPaymentFailed(bookingId, "hold_expired");
-      throw new HttpError(410, "Seat hold expired — please try booking again");
+      throw new GoneError("Seat hold expired — please try booking again");
     }
 
     if (
@@ -144,7 +149,7 @@ export const paymentService = {
         "Signature verification failed",
       );
       await publishPaymentFailed(bookingId, "signature_mismatch");
-      throw new HttpError(400, "Payment signature verification failed");
+      throw new BadRequestError("Payment signature verification failed");
     }
 
     const completed = await completeCapturedPayment({
@@ -154,7 +159,7 @@ export const paymentService = {
       razorpaySignature,
     });
     if (!completed)
-      throw new HttpError(409, "Payment could not be completed for this hold");
+      throw new ConflictError("Payment could not be completed for this hold");
 
     return { status: "captured", bookingId };
   },
@@ -170,7 +175,7 @@ export const paymentService = {
         razorpaySignatureHeader,
       )
     ) {
-      throw new HttpError(400, "Webhook signature verification failed");
+      throw new BadRequestError("Webhook signature verification failed");
     }
 
     const event = JSON.parse(rawBody) as {

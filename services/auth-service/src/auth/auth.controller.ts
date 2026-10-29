@@ -1,4 +1,4 @@
-import { asyncHandler } from "@ticketing/common";
+import { UnauthorizedError } from "@ticketing/common";
 import { RequestHandler } from "express";
 import { authService } from "./auth.service";
 
@@ -17,24 +17,22 @@ const CLEAR_COOKIE_OPTIONS = {
   sameSite: "strict" as const,
 };
 
-export const registerHandler: RequestHandler = asyncHandler(
-  async (req, res) => {
-    const { user, tokens } = await authService.register(req.body);
+export const registerHandler: RequestHandler = async (req, res) => {
+  const { user, tokens } = await authService.register(req.body);
 
-    res.cookie(
-      REFRESH_TOKEN_COOKIE,
-      tokens.refreshToken,
-      getRefreshCookieOptions(tokens.refreshTokenExpiresAt),
-    );
+  res.cookie(
+    REFRESH_TOKEN_COOKIE,
+    tokens.refreshToken,
+    getRefreshCookieOptions(tokens.refreshTokenExpiresAt),
+  );
 
-    res.status(201).json({
-      user,
-      accessToken: tokens.accessToken,
-    });
-  },
-);
+  res.status(201).json({
+    user,
+    accessToken: tokens.accessToken,
+  });
+};
 
-export const loginHandler: RequestHandler = asyncHandler(async (req, res) => {
+export const loginHandler: RequestHandler = async (req, res) => {
   const { user, tokens } = await authService.login(req.body);
 
   res.cookie(
@@ -47,16 +45,15 @@ export const loginHandler: RequestHandler = asyncHandler(async (req, res) => {
     user,
     accessToken: tokens.accessToken,
   });
-});
+};
 
-export const refreshHandler: RequestHandler = asyncHandler(async (req, res) => {
+export const refreshHandler: RequestHandler = async (req, res) => {
   const rawRefreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE] as
     | string
     | undefined;
 
   if (!rawRefreshToken) {
-    res.status(401).json({ error: "Refresh token not found" });
-    return;
+    throw new UnauthorizedError("Refresh token not found");
   }
 
   const tokens = await authService.refresh(rawRefreshToken);
@@ -70,9 +67,9 @@ export const refreshHandler: RequestHandler = asyncHandler(async (req, res) => {
   res.status(200).json({
     accessToken: tokens.accessToken,
   });
-});
+};
 
-export const logoutHandler: RequestHandler = asyncHandler(async (req, res) => {
+export const logoutHandler: RequestHandler = async (req, res) => {
   const rawRefreshToken = req.cookies?.[REFRESH_TOKEN_COOKIE] as
     | string
     | undefined;
@@ -83,4 +80,4 @@ export const logoutHandler: RequestHandler = asyncHandler(async (req, res) => {
 
   res.clearCookie(REFRESH_TOKEN_COOKIE, CLEAR_COOKIE_OPTIONS);
   res.status(200).json({ message: "Logged out successfully" });
-});
+};

@@ -1,4 +1,4 @@
-import { HttpError } from "@ticketing/common";
+import { BadRequestError, NotFoundError } from "@ticketing/common";
 import { eventsRepository } from "./events.repository";
 import { Event } from "./events.table";
 import { db } from "@/db";
@@ -56,7 +56,7 @@ export const eventService = {
     if (cached) return cached;
 
     const event = await eventsRepository.findById(id);
-    if (!event) throw new HttpError(404, "Event not found");
+    if (!event) throw new NotFoundError("Event not found");
 
     await eventsCache.setDetail(event);
     return event;
@@ -90,16 +90,16 @@ export const eventService = {
 
   update: async (id: string, input: UpdateEventInput): Promise<Event> => {
     const existing = await eventsRepository.findById(id);
-    if (!existing) throw new HttpError(404, "Event not found");
+    if (!existing) throw new NotFoundError("Event not found");
 
     if (existing.status === "cancelled")
-      throw new HttpError(400, "Cannot update a cancelled event");
+      throw new BadRequestError("Cannot update a cancelled event");
 
     let updated!: Event;
 
     await db.transaction(async (tx) => {
       const result = await eventsRepository.updateWithTx(tx, id, input);
-      if (!result) throw new HttpError(404, "Event not found");
+      if (!result) throw new NotFoundError("Event not found");
       updated = result;
 
       await outboxRepository.createWithTx(tx, {
@@ -120,9 +120,9 @@ export const eventService = {
 
   cancel: async (id: string): Promise<void> => {
     const existing = await eventsRepository.findById(id);
-    if (!existing) throw new HttpError(404, "Event not found");
+    if (!existing) throw new NotFoundError("Event not found");
     if (existing.status === "cancelled") {
-      throw new HttpError(400, "Event is already cancelled");
+      throw new BadRequestError("Event is already cancelled");
     }
 
     let updated!: Event;
@@ -131,7 +131,7 @@ export const eventService = {
       const result = await eventsRepository.updateWithTx(tx, id, {
         status: "cancelled",
       });
-      if (!result) throw new HttpError(404, "Event not found");
+      if (!result) throw new NotFoundError("Event not found");
       updated = result;
 
       await outboxRepository.createWithTx(tx, {

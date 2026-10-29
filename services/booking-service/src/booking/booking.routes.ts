@@ -5,7 +5,7 @@ import {
   getAllHandler,
   getByIdHandler,
 } from "./booking.controller";
-import { HttpError, validateRequest } from "@ticketing/common";
+import { validateRequest, BadRequestError } from "@ticketing/common";
 import { bookingIdParamSchema, createBookingSchema } from "./booking.schema";
 
 export const bookingRouter: Router = Router();
@@ -25,7 +25,7 @@ bookingRouter.post(
 
   (req: Request, _res: Response, next: NextFunction) => {
     if (!req.headers["idempotency-key"]) {
-      next(new HttpError(400, "Idempotency-Key header is required"));
+      next(new BadRequestError("Idempotency-Key header is required"));
       return;
     }
     next();

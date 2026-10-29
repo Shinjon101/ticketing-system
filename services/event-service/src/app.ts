@@ -2,7 +2,7 @@ import express, { Application } from "express";
 import logger from "@/config/logger";
 import { eventRouter } from "@/events/events.routes";
 import { getPoolStats } from "@/db";
-import { errorHandler } from "@/middleware/error-handler";
+import { createErrorHandler, notFoundHandler } from "@ticketing/common";
 import { httpMetricsMiddleware, metricsRoute } from "./metrics";
 
 export const createApp = (): Application => {
@@ -31,11 +31,9 @@ export const createApp = (): Application => {
     });
   });
 
-  app.use((_req, res) => {
-    res.status(404).json({ error: "Route not found" });
-  });
+  app.use(notFoundHandler);
 
-  app.use(errorHandler);
+  app.use(createErrorHandler(logger));
 
   return app;
 };

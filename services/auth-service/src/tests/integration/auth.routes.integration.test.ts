@@ -15,10 +15,16 @@ vi.mock("@/auth/token.service", () => ({
 }));
 
 import request from "supertest";
+import type { Request, Response } from "express";
 import { createApp } from "@/app";
 import { authService } from "@/auth/auth.service";
 import { verifyAccessToken } from "@/auth/token.service";
-import { HttpError } from "@ticketing/common";
+import logger from "@/config/logger";
+import {
+  ConflictError,
+  createErrorHandler,
+  UnauthorizedError,
+} from "@ticketing/common";
 
 const app = createApp();
 
@@ -73,7 +79,7 @@ describe("POST /auth/register", () => {
 
   it("returns 409 when email is already taken", async () => {
     vi.mocked(authService.register).mockRejectedValue(
-      new HttpError(409, "Email already in use"),
+      new ConflictError("Email already in use"),
     );
 
     const res = await request(app)
@@ -81,7 +87,7 @@ describe("POST /auth/register", () => {
       .send({ email: "existing@example.com", password: "Password123!" });
 
     expect(res.status).toBe(409);
-    expect(res.body.message).toMatch(/email already in use/i);
+    expect(res.body.detail).toMatch(/email already in use/i);
   });
 });
 
@@ -112,7 +118,7 @@ describe("POST /auth/login", () => {
 
   it("returns 401 on bad credentials", async () => {
     vi.mocked(authService.login).mockRejectedValue(
-      new HttpError(401, "Invalid credentials"),
+      new UnauthorizedError("Invalid credentials"),
     );
 
     const res = await request(app)
@@ -144,7 +150,7 @@ describe("POST /auth/refresh", () => {
 
   it("returns 401 when token is expired / invalid", async () => {
     vi.mocked(authService.refresh).mockRejectedValue(
-      new HttpError(401, "Invalid or expired refresh token"),
+      new UnauthorizedError("Invalid or expired refresh token"),
     );
 
     const res = await request(app)
@@ -207,9 +213,124 @@ describe("GET /auth/me", () => {
   });
 });
 
-describe("404 catch-all", () => {
+describe("error responses", () => {
+  it("serialises an AppError as problem+json", async () => {
+    vi.mocked(authService.register).mockRejectedValueOnce(
+      new ConflictError("Email already in use"),
+    );
+
+    const res = await request(app)
+      .post("/auth/register")
+      .send({ email: "existing@example.com", password: "Password123!" });
+
+    expect(res.headers["content-type"]).toMatch(/application\/problem\+json/);
+    expect(res.body).toEqual({
+      type: "about:blank",
+      title: "Conflict",
+      status: 409,
+      detail: "Email already in use",
+      code: "CONFLICT",
+    });
+  });
+
+  it("returns 422 with field-level errors when validation fails", async () => {
+    const res = await request(app)
+      .post("/auth/register")
+      .send({ email: "test@example.com", password: "short" });
+
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("VALIDATION_FAILED");
+    expect(res.body.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "password" })]),
+    );
+  });
+
+  it("returns 400 for malformed JSON without echoing the body", async () => {
+    const warnSpy = vi.spyOn(logger, "warn");
+
+    const res = await request(app)
+      .post("/auth/login")
+      .set("Content-Type", "application/json")
+      .send('{"email": "test@example.com", "password": hunter2}');
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("MALFORMED_JSON");
+    expect(JSON.stringify(res.body)).not.toMatch(/hunter2/);
+    expect(JSON.stringify(warnSpy.mock.calls)).not.toMatch(/hunter2/);
+    expect(authService.login).not.toHaveBeenCalled();
+  });
+
+  it("returns 413 when the body exceeds the size limit", async () => {
+    const res = await request(app)
+      .post("/auth/register")
+      .send({ email: "test@example.com", password: "x".repeat(200_000) });
+
+    expect(res.status).toBe(413);
+    expect(res.body.code).toBe("PAYLOAD_TOO_LARGE");
+  });
+
+  it("treats an unrecognised exposed error as a 500", async () => {
+    vi.mocked(authService.login).mockRejectedValueOnce(
+      Object.assign(new Error("redirect"), { expose: true, status: 302 }),
+    );
+
+    const res = await request(app)
+      .post("/auth/login")
+      .send({ email: "test@example.com", password: "Password123!" });
+
+    expect(res.status).toBe(500);
+    expect(res.body.code).toBe("INTERNAL_ERROR");
+  });
+
+  it("logs the path without the query string", async () => {
+    const warnSpy = vi.spyOn(logger, "warn");
+
+    await request(app).get("/auth/does-not-exist?token=secret-value");
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "/auth/does-not-exist" }),
+      expect.any(String),
+    );
+    expect(JSON.stringify(warnSpy.mock.calls)).not.toMatch(/secret-value/);
+  });
+
+  it("logs and delegates when headers were already sent", () => {
+    const errorSpy = vi.spyOn(logger, "error");
+    const next = vi.fn();
+    const err = new Error("stream broke");
+
+    createErrorHandler(logger)(
+      err,
+      { method: "GET", originalUrl: "/auth/me?token=secret-value" } as Request,
+      { headersSent: true } as Response,
+      next,
+    );
+
+    expect(next).toHaveBeenCalledWith(err);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "/auth/me", err }),
+      expect.any(String),
+    );
+  });
+
+  it("returns a generic 500 without leaking the underlying error", async () => {
+    vi.mocked(authService.login).mockRejectedValueOnce(
+      new Error("connection to db-host:5432 refused"),
+    );
+
+    const res = await request(app)
+      .post("/auth/login")
+      .send({ email: "test@example.com", password: "Password123!" });
+
+    expect(res.status).toBe(500);
+    expect(res.body.code).toBe("INTERNAL_ERROR");
+    expect(JSON.stringify(res.body)).not.toMatch(/db-host/);
+  });
+
   it("returns 404 for unknown routes", async () => {
     const res = await request(app).get("/auth/does-not-exist");
+
     expect(res.status).toBe(404);
+    expect(res.body.code).toBe("ROUTE_NOT_FOUND");
   });
 });

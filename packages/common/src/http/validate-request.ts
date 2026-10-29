@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 
 import { ZodObject, ZodError, ZodTypeAny } from "zod";
 
-import { HttpError } from "../errors/http-error";
+import { ValidationError } from "../errors/app-error";
 
 type Schema = ZodObject | ZodTypeAny;
 type ParamRecord = Record<string, string>;
@@ -41,8 +41,8 @@ export const validateRequest = (schemas: RequestValidationSchemas) => {
     } catch (error) {
       if (error instanceof ZodError) {
         next(
-          new HttpError(422, "Validation Error", {
-            issues: formatError(error),
+          new ValidationError("Request validation failed", {
+            details: { errors: formatError(error) },
           }),
         );
       } else {

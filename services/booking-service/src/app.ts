@@ -4,7 +4,7 @@ import logger from "./config/logger";
 import { getPoolStats } from "./db";
 import { bookingRouter } from "./booking/booking.routes";
 import { httpMetricsMiddleware, metricsRoute } from "./metrics";
-import { errorHandler } from "./middleware/error-handler";
+import { createErrorHandler, notFoundHandler } from "@ticketing/common";
 
 export const createApp = (): Application => {
   const app = express();
@@ -32,11 +32,9 @@ export const createApp = (): Application => {
 
   app.get("/metrics", metricsRoute);
 
-  app.use((_req, res) => {
-    res.status(404).json({ error: "Route not found" });
-  });
+  app.use(notFoundHandler);
 
-  app.use(errorHandler);
+  app.use(createErrorHandler(logger));
 
   return app;
 };

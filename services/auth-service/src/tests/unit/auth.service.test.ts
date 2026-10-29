@@ -27,7 +27,7 @@ vi.mock("@/auth/token.service", () => ({
 import { authService } from "@/auth/auth.service";
 import { userRepository } from "@/users/user.repository";
 import { authRepository } from "@/auth/auth.repository";
-import { HttpError } from "@ticketing/common";
+import { ConflictError } from "@ticketing/common";
 
 const mockUser = {
   id: "user-uuid-123",
@@ -86,7 +86,7 @@ describe("auth.service", () => {
           email: "test@example.com",
           password: "Password123!",
         }),
-      ).rejects.toThrow(HttpError);
+      ).rejects.toThrow(ConflictError);
 
       await expect(
         authService.register({

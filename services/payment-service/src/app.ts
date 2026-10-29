@@ -1,5 +1,6 @@
 import express, { type Application } from "express";
-import { errorHandler } from "./middlewares/error-handler";
+import { createErrorHandler, notFoundHandler } from "@ticketing/common";
+import { logger } from "./config/logger";
 import { getPoolStats } from "./db";
 import { paymentRouter } from "./payment/payment.routes";
 import { httpMetricsMiddleware, metricsRoute } from "./metrics";
@@ -32,7 +33,7 @@ export const createApp = (): Application => {
     });
   });
 
-  app.use((_req, res) => res.status(404).json({ error: "Route not found" }));
-  app.use(errorHandler);
+  app.use(notFoundHandler);
+  app.use(createErrorHandler(logger));
   return app;
 };

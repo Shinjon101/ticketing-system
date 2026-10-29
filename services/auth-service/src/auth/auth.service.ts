@@ -1,6 +1,6 @@
 import { User } from "@/db/schema";
 import { userRepository } from "@/users/user.repository";
-import { HttpError } from "@ticketing/common";
+import { ConflictError, UnauthorizedError } from "@ticketing/common";
 import brcypt from "bcryptjs";
 import { authRepository } from "./auth.repository";
 import {
@@ -38,7 +38,7 @@ export const authService = {
 
     const existing = await userRepository.findByEmail(email);
     if (existing) {
-      throw new HttpError(409, "Email already in use");
+      throw new ConflictError("Email already in use");
     }
 
     const passwordHash = await brcypt.hash(password, BCRYPT_ROUNDS);
@@ -70,7 +70,7 @@ export const authService = {
     const isValid = await brcypt.compare(password, passwordToCheck);
 
     if (!user || !isValid) {
-      throw new HttpError(401, "Invalid credentials");
+      throw new UnauthorizedError("Invalid credentials");
     }
 
     const tokens = await createTokenPair(user);
@@ -86,13 +86,13 @@ export const authService = {
     const storedToken = await authRepository.findByHash(hash);
 
     if (!storedToken) {
-      throw new HttpError(401, "Invalid or expired refresh token");
+      throw new UnauthorizedError("Invalid or expired refresh token");
     }
 
     const user = await userRepository.findById(storedToken.userId);
 
     if (!user) {
-      throw new HttpError(401, "User not found");
+      throw new UnauthorizedError("User not found");
     }
 
     await authRepository.revokeById(storedToken.id);

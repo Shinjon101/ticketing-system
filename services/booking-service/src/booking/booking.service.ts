@@ -1,4 +1,8 @@
-import { HttpError } from "@ticketing/common";
+import {
+  BadRequestError,
+  ForbiddenError,
+  NotFoundError,
+} from "@ticketing/common";
 import { bookingRepository } from "./booking.repsoitory";
 import { Booking } from "./booking.table";
 import { eventCache } from "@/redis/event.cache";
@@ -36,13 +40,13 @@ export const bookingService = {
 
     if (!booking) {
       booking = (await bookingRepository.findById(id)) as Booking;
-      if (!booking) throw new HttpError(404, "Booking not found");
+      if (!booking) throw new NotFoundError("Booking not found");
 
       await bookingCache.set(booking);
     }
 
     if (booking.userId !== userId) {
-      throw new HttpError(403, "Forbidden");
+      throw new ForbiddenError("Forbidden");
     }
 
     return booking;
@@ -56,16 +60,14 @@ export const bookingService = {
     const { eventId, idempotencyKey, userId, quantity } = input;
 
     const event = await eventCache.get(eventId);
-    if (!event)
-      throw new HttpError(404, "Event not found or not yet available");
+    if (!event) throw new NotFoundError("Event not found or not yet available");
     if (event.status !== "active") {
-      throw new HttpError(
-        400,
+      throw new BadRequestError(
         `Event is ${event.status} — bookings not accepted`,
       );
     }
     if (event.saleStartsAt && new Date() < new Date(event.saleStartsAt)) {
-      throw new HttpError(400, "Sale has not started yet");
+      throw new BadRequestError("Sale has not started yet");
     }
 
     const existingBookingId = await idempotencyCache.get(idempotencyKey);
