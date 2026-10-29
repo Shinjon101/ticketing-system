@@ -1,16 +1,23 @@
 import { STATUS_CODES } from "node:http";
 import type { ErrorRequestHandler, RequestHandler } from "express";
-import type { Logger } from "pino";
 import { AppError, NotFoundError } from "../errors/app-error";
-import { requestPath } from "./request-path";
+import { pathWithoutQuery } from "./request-path";
 
-interface ProblemDetails {
+export interface ProblemDetails {
   type: string;
   title: string;
   status: number;
   detail: string;
   code: string;
   [extension: string]: unknown;
+}
+
+declare global {
+  namespace Express {
+    interface Locals {
+      problem?: ProblemDetails;
+    }
+  }
 }
 
 interface KnownClientError {
@@ -86,41 +93,36 @@ const toProblem = (err: unknown): ProblemDetails => {
   };
 };
 
-export const createErrorHandler =
-  (logger: Logger): ErrorRequestHandler =>
-  (err: unknown, req, res, next) => {
-    const path = requestPath(req);
+const toError = (err: unknown): Error =>
+  err instanceof Error ? err : new Error(String(err));
 
-    if (res.headersSent) {
-      logger.error(
-        { method: req.method, path, err },
-        "Request failed after response headers were sent",
-      );
-      next(err);
-      return;
-    }
+export const errorHandler: ErrorRequestHandler = (
+  err: unknown,
+  _req,
+  res,
+  next,
+) => {
+  if (res.headersSent) {
+    res.err = toError(err);
+    next(err);
+    return;
+  }
 
-    const problem = toProblem(err);
-    const context = {
-      method: req.method,
-      path,
-      status: problem.status,
-      code: problem.code,
-    };
+  const problem = toProblem(err);
+  res.locals.problem = problem;
 
-    if (problem.status >= 500) {
-      logger.error({ ...context, err }, "Request failed");
-    } else {
-      logger.warn(context, problem.detail);
-    }
+  if (problem.status >= 500) {
+    res.err = toError(err);
+  }
 
-    res.status(problem.status).type("application/problem+json").json(problem);
-  };
+  res.status(problem.status).type("application/problem+json").json(problem);
+};
 
 export const notFoundHandler: RequestHandler = (req, _res, next) => {
   next(
-    new NotFoundError(`Route ${req.method} ${requestPath(req)} not found`, {
-      code: "ROUTE_NOT_FOUND",
-    }),
+    new NotFoundError(
+      `Route ${req.method} ${pathWithoutQuery(req.originalUrl)} not found`,
+      { code: "ROUTE_NOT_FOUND" },
+    ),
   );
 };

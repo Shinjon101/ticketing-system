@@ -17,7 +17,7 @@ import {
   TOPICS,
 } from "@ticketing/kafka-client";
 import { bookingCache } from "@/redis/booking.cache";
-import logger from "@/config/logger";
+import { logger } from "@/config/logger";
 import {
   bookingConfirmedTotal,
   bookingCreatedTotal,

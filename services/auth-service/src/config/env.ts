@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-import { createEnv, z } from "@ticketing/common";
+import { createEnv, logLevelSchema, z } from "@ticketing/common";
 
 export const envScham = z.object({
   NODE_ENV: z
@@ -18,9 +18,9 @@ export const envScham = z.object({
 
   JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
 
-  LOG_LEVEL: z
-    .enum(["trace", "debug", "info", "warn", "error", "fatal"])
-    .default("info"),
+  LOG_LEVEL: logLevelSchema.default("info"),
+
+  LOG_PRETTY: z.stringbool().default(false),
 
   ADMIN_EMAIL: z.email().optional(),
   ADMIN_PASSWORD: z.string().min(8).optional(),

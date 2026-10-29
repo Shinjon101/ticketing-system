@@ -14,19 +14,41 @@ vi.mock("@/auth/token.service", () => ({
   hashRefreshToken: vi.fn(),
 }));
 
+const logLines = vi.hoisted((): Record<string, unknown>[] => []);
+
+vi.mock("@/config/logger", async () => {
+  const { createLogger } = await import("@ticketing/common");
+  return {
+    logger: createLogger({
+      name: "auth-service",
+      level: "debug",
+      destination: {
+        write: (line: string) => {
+          logLines.push(JSON.parse(line) as Record<string, unknown>);
+        },
+      },
+    }),
+  };
+});
+
 import request from "supertest";
 import type { Request, Response } from "express";
 import { createApp } from "@/app";
 import { authService } from "@/auth/auth.service";
 import { verifyAccessToken } from "@/auth/token.service";
-import logger from "@/config/logger";
 import {
   ConflictError,
-  createErrorHandler,
+  errorHandler,
   UnauthorizedError,
 } from "@ticketing/common";
 
 const app = createApp();
+
+const accessLines = () => logLines.filter((line) => "res" in line);
+
+beforeEach(() => {
+  logLines.length = 0;
+});
 
 const mockAuthResult = {
   user: {
@@ -246,8 +268,6 @@ describe("error responses", () => {
   });
 
   it("returns 400 for malformed JSON without echoing the body", async () => {
-    const warnSpy = vi.spyOn(logger, "warn");
-
     const res = await request(app)
       .post("/auth/login")
       .set("Content-Type", "application/json")
@@ -256,7 +276,7 @@ describe("error responses", () => {
     expect(res.status).toBe(400);
     expect(res.body.code).toBe("MALFORMED_JSON");
     expect(JSON.stringify(res.body)).not.toMatch(/hunter2/);
-    expect(JSON.stringify(warnSpy.mock.calls)).not.toMatch(/hunter2/);
+    expect(JSON.stringify(logLines)).not.toMatch(/hunter2/);
     expect(authService.login).not.toHaveBeenCalled();
   });
 
@@ -282,35 +302,15 @@ describe("error responses", () => {
     expect(res.body.code).toBe("INTERNAL_ERROR");
   });
 
-  it("logs the path without the query string", async () => {
-    const warnSpy = vi.spyOn(logger, "warn");
-
-    await request(app).get("/auth/does-not-exist?token=secret-value");
-
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ path: "/auth/does-not-exist" }),
-      expect.any(String),
-    );
-    expect(JSON.stringify(warnSpy.mock.calls)).not.toMatch(/secret-value/);
-  });
-
-  it("logs and delegates when headers were already sent", () => {
-    const errorSpy = vi.spyOn(logger, "error");
+  it("attaches the error for logging and delegates when headers were already sent", () => {
     const next = vi.fn();
     const err = new Error("stream broke");
+    const res = { headersSent: true, locals: {} } as Response;
 
-    createErrorHandler(logger)(
-      err,
-      { method: "GET", originalUrl: "/auth/me?token=secret-value" } as Request,
-      { headersSent: true } as Response,
-      next,
-    );
+    errorHandler(err, {} as Request, res, next);
 
+    expect(res.err).toBe(err);
     expect(next).toHaveBeenCalledWith(err);
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ path: "/auth/me", err }),
-      expect.any(String),
-    );
   });
 
   it("returns a generic 500 without leaking the underlying error", async () => {
@@ -332,5 +332,120 @@ describe("error responses", () => {
 
     expect(res.status).toBe(404);
     expect(res.body.code).toBe("ROUTE_NOT_FOUND");
+  });
+});
+
+describe("request logging", () => {
+  it("writes one access line with request id, path, status and duration", async () => {
+    vi.mocked(authService.login).mockResolvedValueOnce(mockAuthResult);
+
+    const res = await request(app)
+      .post("/auth/login")
+      .send({ email: "test@example.com", password: "Password123!" });
+
+    const lines = accessLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      level: 30,
+      req: {
+        id: res.headers["x-request-id"],
+        method: "POST",
+        path: "/auth/login",
+      },
+      res: { statusCode: 200 },
+      responseTime: expect.any(Number),
+    });
+  });
+
+  it("never logs credentials, tokens or cookies", async () => {
+    vi.mocked(authService.login).mockResolvedValueOnce(mockAuthResult);
+
+    await request(app)
+      .post("/auth/login")
+      .set("Authorization", "Bearer some.bearer.token")
+      .set("Cookie", "refresh_token=incoming-refresh-token")
+      .send({ email: "test@example.com", password: "Password123!" });
+
+    const logged = JSON.stringify(logLines);
+    for (const secret of [
+      "Password123!",
+      "some.bearer.token",
+      "incoming-refresh-token",
+      mockAuthResult.tokens.accessToken,
+      mockAuthResult.tokens.refreshToken,
+    ]) {
+      expect(logged).not.toContain(secret);
+    }
+  });
+
+  it("reuses a well-formed x-request-id and replaces a malformed one", async () => {
+    const reused = await request(app)
+      .get("/auth/does-not-exist")
+      .set("x-request-id", "k6-run-42");
+    const replaced = await request(app)
+      .get("/auth/does-not-exist")
+      .set("x-request-id", "x".repeat(200));
+
+    expect(reused.headers["x-request-id"]).toBe("k6-run-42");
+    expect(replaced.headers["x-request-id"]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(
+      accessLines().map((line) => (line.req as { id: string }).id),
+    ).toEqual([
+      reused.headers["x-request-id"],
+      replaced.headers["x-request-id"],
+    ]);
+  });
+
+  it("logs a client error once at warn with its problem code and no stack", async () => {
+    vi.mocked(authService.register).mockRejectedValueOnce(
+      new ConflictError("Email already in use"),
+    );
+
+    await request(app)
+      .post("/auth/register")
+      .send({ email: "existing@example.com", password: "Password123!" });
+
+    const lines = accessLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      level: 40,
+      problem: { code: "CONFLICT", detail: "Email already in use" },
+    });
+    expect(lines[0]).not.toHaveProperty("err");
+  });
+
+  it("logs a server error once at error with the stack", async () => {
+    vi.mocked(authService.login).mockRejectedValueOnce(
+      new Error("connection to db-host:5432 refused"),
+    );
+
+    await request(app)
+      .post("/auth/login")
+      .send({ email: "test@example.com", password: "Password123!" });
+
+    const lines = accessLines();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      level: 50,
+      problem: { code: "INTERNAL_ERROR" },
+      err: { message: "connection to db-host:5432 refused" },
+    });
+    expect((lines[0]?.err as { stack: string }).stack).toContain("Error:");
+  });
+
+  it("logs the path without the query string", async () => {
+    await request(app).get("/auth/does-not-exist?token=secret-value");
+
+    expect(accessLines()[0]).toMatchObject({
+      req: { path: "/auth/does-not-exist" },
+    });
+    expect(JSON.stringify(logLines)).not.toContain("secret-value");
+  });
+
+  it("does not log successful health checks", async () => {
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(accessLines()).toHaveLength(0);
   });
 });

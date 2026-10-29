@@ -1,6 +1,6 @@
 import Redis from "ioredis";
 import { env } from "@/config/env";
-import logger from "@/config/logger";
+import { logger } from "@/config/logger";
 
 export const redis = new Redis(env.REDIS_URL, {
   retryStrategy(times) {

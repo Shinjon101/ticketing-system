@@ -1,29 +1,65 @@
 import pino from "pino";
+import type { DestinationStream, Logger, LoggerOptions } from "pino";
+import { z } from "zod";
 
-import type { Logger, LoggerOptions } from "pino";
+export const logLevelSchema = z.enum([
+  "trace",
+  "debug",
+  "info",
+  "warn",
+  "error",
+  "fatal",
+]);
 
-type CreateLoggerOptions = LoggerOptions & {
+export type LogLevel = z.infer<typeof logLevelSchema>;
+
+export interface CreateLoggerOptions {
   name: string;
-};
+  level: LogLevel;
+  pretty?: boolean;
+  destination?: DestinationStream;
+}
 
-export const createLogger = (options: CreateLoggerOptions): Logger => {
-  const { name, ...rest } = options;
+const SENSITIVE_HEADERS = [
+  "authorization",
+  "cookie",
+  "set-cookie",
+  "x-razorpay-signature",
+];
 
-  const transport =
-    process.env.LOG_PRETTY === "true"
+const SENSITIVE_FIELDS = [
+  "password",
+  "passwordHash",
+  "accessToken",
+  "refreshToken",
+  "razorpaySignature",
+];
+
+const REDACT_PATHS = [
+  ...SENSITIVE_HEADERS.flatMap((header) => [
+    `headers["${header}"]`,
+    `*.headers["${header}"]`,
+  ]),
+  ...SENSITIVE_FIELDS.flatMap((field) => [field, `*.${field}`]),
+];
+
+export const createLogger = ({
+  name,
+  level,
+  pretty = false,
+  destination,
+}: CreateLoggerOptions): Logger => {
+  const options: LoggerOptions = {
+    name,
+    level,
+    redact: REDACT_PATHS,
+    transport: pretty
       ? {
           target: "pino-pretty",
-          options: {
-            colorize: true,
-            translateTime: "SYS:standard",
-          },
+          options: { colorize: true, translateTime: "SYS:standard" },
         }
-      : undefined;
+      : undefined,
+  };
 
-  return pino({
-    name,
-    level: process.env.LOG_LEVEL || "info",
-    transport,
-    ...rest,
-  });
+  return destination ? pino(options, destination) : pino(options);
 };

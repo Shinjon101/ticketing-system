@@ -1,5 +1,5 @@
 vi.mock("@/config/logger", () => ({
-  default: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock("@/db", () => ({

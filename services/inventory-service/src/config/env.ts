@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { createEnv, z } from "@ticketing/common";
+import { createEnv, logLevelSchema, z } from "@ticketing/common";
 
 export const envSchema = z.object({
   NODE_ENV: z
@@ -14,9 +14,9 @@ export const envSchema = z.object({
 
   REDIS_URL: z.string().min(1, "REDIS_URL is required"),
 
-  LOG_LEVEL: z
-    .enum(["trace", "debug", "info", "warn", "error", "fatal"])
-    .default("info"),
+  LOG_LEVEL: logLevelSchema.default("info"),
+
+  LOG_PRETTY: z.stringbool().default(false),
 });
 
 type EnvType = z.infer<typeof envSchema>;

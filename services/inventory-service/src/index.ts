@@ -54,7 +54,7 @@ const start = async () => {
   process.on("SIGINT", () => void shutdown("SIGINT"));
 
   process.on("unhandledRejection", (reason) => {
-    logger.fatal({ reason }, "Unhandled promise rejection");
+    logger.fatal({ err: reason }, "Unhandled promise rejection");
     process.exit(1);
   });
 

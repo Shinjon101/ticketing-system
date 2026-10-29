@@ -3,7 +3,7 @@ import { createKafkaProducer } from "@/kafka";
 import { startOutboxPoller, stopOutboxPoller } from "@/outbox/outbox.poller";
 import { createApp } from "@/app";
 import { env } from "@/config/env";
-import logger from "@/config/logger";
+import { logger } from "@/config/logger";
 import { connectRedis, disconnectRedis } from "./redis";
 
 const start = async () => {
@@ -51,7 +51,7 @@ const start = async () => {
   process.on("SIGINT", () => void shutdown("SIGINT"));
 
   process.on("unhandledRejection", (reason) => {
-    logger.fatal({ reason }, "Unhandled promise rejection");
+    logger.fatal({ err: reason }, "Unhandled promise rejection");
     process.exit(1);
   });
 

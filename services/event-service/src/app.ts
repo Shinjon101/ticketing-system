@@ -1,20 +1,21 @@
 import express, { Application } from "express";
-import logger from "@/config/logger";
+import { logger } from "@/config/logger";
 import { eventRouter } from "@/events/events.routes";
 import { getPoolStats } from "@/db";
-import { createErrorHandler, notFoundHandler } from "@ticketing/common";
+import {
+  createHttpLogger,
+  errorHandler,
+  notFoundHandler,
+} from "@ticketing/common";
 import { httpMetricsMiddleware, metricsRoute } from "./metrics";
 
 export const createApp = (): Application => {
   const app = express();
 
+  app.use(createHttpLogger(logger));
+
   app.use(httpMetricsMiddleware);
   app.use(express.json());
-
-  app.use((req, _res, next) => {
-    logger.debug({ method: req.method, path: req.path }, "Incoming request");
-    next();
-  });
 
   app.use("/events", eventRouter);
 
@@ -33,7 +34,7 @@ export const createApp = (): Application => {
 
   app.use(notFoundHandler);
 
-  app.use(createErrorHandler(logger));
+  app.use(errorHandler);
 
   return app;
 };

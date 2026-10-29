@@ -1,39 +1,47 @@
 import { batchDeleteOlderThan, drizzle, eq } from "@ticketing/db";
+import { createEnv, createLogger, logLevelSchema, z } from "@ticketing/common";
 import { Pool } from "pg";
 import "dotenv/config";
 import { outboxEvents } from "@/outbox/outbox.table";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  console.error("DATABASE_URL environment variable is required");
-  process.exit(1);
-}
+const JOB_NAME = "event-service-cleanup";
 
-const OUTBOX_RETENTION_DAYS = Number(process.env.OUTBOX_RETENTION_DAYS ?? 7);
-const pool = new Pool({ connectionString });
+const env = createEnv(
+  z.object({
+    DATABASE_URL: z.string().url(),
+    LOG_LEVEL: logLevelSchema.default("info"),
+    OUTBOX_RETENTION_DAYS: z.coerce.number().int().positive().default(7),
+  }),
+  { serviceName: JOB_NAME },
+);
+
+const logger = createLogger({ name: JOB_NAME, level: env.LOG_LEVEL });
+
+const pool = new Pool({ connectionString: env.DATABASE_URL });
 const db = drizzle({ client: pool });
 
 const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
 
 const run = async () => {
-  console.log("Running cleanup...");
+  logger.info("Running cleanup");
 
   const outboxDeleted = await batchDeleteOlderThan(db, {
     table: outboxEvents,
     idColumn: outboxEvents.id,
     timestampColumn: outboxEvents.createdAt,
-    cutoff: daysAgo(OUTBOX_RETENTION_DAYS),
+    cutoff: daysAgo(env.OUTBOX_RETENTION_DAYS),
     extraCondition: eq(outboxEvents.published, true),
     label: "outbox_events",
+    logger,
   });
 
-  console.log(`Cleanup complete. outbox_events: ${outboxDeleted}`);
+  logger.info({ outboxDeleted }, "Cleanup complete");
 };
 
 try {
   await run();
-} catch (error) {
-  console.error("Cleanup failed", error);
+} catch (err) {
+  logger.error({ err }, "Cleanup failed");
   process.exitCode = 1;
 } finally {
   await pool.end();

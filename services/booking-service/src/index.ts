@@ -6,7 +6,7 @@ import { connectRedis, disconnectRedis } from "@/redis";
 import { createKafkaProducer, startKafkaConsumer } from "./kafka";
 import { startOutboxPoller, stopOutboxPoller } from "@/outbox/outbox.poller";
 import { env } from "@/config/env";
-import logger from "@/config/logger";
+import { logger } from "@/config/logger";
 
 const start = async () => {
   await connectDB();
@@ -56,7 +56,7 @@ const start = async () => {
   process.on("SIGINT", () => void shutdown("SIGINT"));
 
   process.on("unhandledRejection", (reason) => {
-    logger.fatal({ reason }, "Unhandled promise rejection");
+    logger.fatal({ err: reason }, "Unhandled promise rejection");
     process.exit(1);
   });
 

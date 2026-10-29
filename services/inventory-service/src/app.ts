@@ -1,6 +1,10 @@
 import type { Application } from "express";
 import express from "express";
-import { createErrorHandler, notFoundHandler } from "@ticketing/common";
+import {
+  createHttpLogger,
+  errorHandler,
+  notFoundHandler,
+} from "@ticketing/common";
 import { logger } from "./config/logger";
 import { getPoolStats } from "./db";
 import { seatsCounter } from "./redis/seat-counter";
@@ -9,6 +13,8 @@ import { httpMetricsMiddleware, metricsRoute } from "./metrics";
 
 export const createApp = (): Application => {
   const app: Application = express();
+
+  app.use(createHttpLogger(logger));
   app.use(httpMetricsMiddleware);
   app.use(express.json());
 
@@ -43,7 +49,7 @@ export const createApp = (): Application => {
 
   app.use(notFoundHandler);
 
-  app.use(createErrorHandler(logger));
+  app.use(errorHandler);
 
   return app;
 };

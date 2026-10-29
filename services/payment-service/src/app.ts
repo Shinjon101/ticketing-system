@@ -1,5 +1,9 @@
 import express, { type Application } from "express";
-import { createErrorHandler, notFoundHandler } from "@ticketing/common";
+import {
+  createHttpLogger,
+  errorHandler,
+  notFoundHandler,
+} from "@ticketing/common";
 import { logger } from "./config/logger";
 import { getPoolStats } from "./db";
 import { paymentRouter } from "./payment/payment.routes";
@@ -7,6 +11,8 @@ import { httpMetricsMiddleware, metricsRoute } from "./metrics";
 
 export const createApp = (): Application => {
   const app = express();
+
+  app.use(createHttpLogger(logger));
 
   app.use(httpMetricsMiddleware);
 
@@ -34,6 +40,6 @@ export const createApp = (): Application => {
   });
 
   app.use(notFoundHandler);
-  app.use(createErrorHandler(logger));
+  app.use(errorHandler);
   return app;
 };

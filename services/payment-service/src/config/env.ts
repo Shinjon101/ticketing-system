@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { z, createEnv } from "@ticketing/common";
+import { createEnv, logLevelSchema, z } from "@ticketing/common";
 
 const envSchema = z.object({
   NODE_ENV: z
@@ -17,9 +17,9 @@ const envSchema = z.object({
     .string()
     .min(1, "RAZORPAY_WEBHOOK_SECRET is required"),
 
-  LOG_LEVEL: z
-    .enum(["trace", "debug", "info", "warn", "error", "fatal"])
-    .default("info"),
+  LOG_LEVEL: logLevelSchema.default("info"),
+
+  LOG_PRETTY: z.stringbool().default(false),
 });
 
 type EnvType = z.infer<typeof envSchema>;

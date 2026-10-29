@@ -1,7 +1,7 @@
 import { env } from "@/config/env";
 import { createDb, type DbTransaction } from "@ticketing/db";
 import * as schema from "./schema";
-import logger from "@/config/logger";
+import { logger } from "@/config/logger";
 
 export const { connectDB, db, disconnectDB, getPoolStats } = createDb({
   connectionString: env.DATABASE_URL,

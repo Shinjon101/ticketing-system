@@ -1385,7 +1385,16 @@ None of these were in code that changed in the failing commit, a new CVE was pub
 }
 ```
 
-`LOG_PRETTY` env var controls `pino-pretty` formatting independently of `NODE_ENV`, so structured JSON can be forced on in development for testing the log pipeline, or pretty-printing forced on in a container for manual debugging.
+`createLogger` in `packages/common` is the only place logger behaviour is defined. Services pass their validated `LOG_LEVEL`/`LOG_PRETTY` env values in and cannot override the shared settings.
+
+- **Errors always go under `err`.** It is the only key Pino's error serializer handles; an `Error` under any other key serializes as `{}`. The serializer includes the `cause` chain.
+- **Secrets are redacted centrally.** `authorization`, `cookie`, `set-cookie` and `x-razorpay-signature` headers, plus `password`, `passwordHash`, `accessToken`, `refreshToken` and `razorpaySignature` fields, are censored at the top level and one level deep.
+- **One access line per HTTP request** via `pino-http` (`createHttpLogger`), with an allowlisted request shape (`id`, `method`, path without query string) and `statusCode`/`responseTime`. Level follows the outcome: 2xx `info`, 4xx `warn` with the problem `code`/`detail`, 5xx `error` with the stack. Successful `/health` and `/metrics` hits are not logged. The error handler does not log; it records the problem on `res.locals.problem` (and the error on `res.err` for 5xx) so the access line is the single record of a failed request.
+- **Request IDs.** A well-formed incoming `x-request-id` (`[\w-]{1,128}`) is reused, otherwise a UUID is generated; it is echoed in the response header and logged as `req.id`.
+- **Saga correlation by `bookingId`.** The Kafka consumer logs through a per-message child logger bound to `topic`/`partition`/`offset` and the payload's `messageId`/`bookingId`/`eventId`, so `| json | bookingId="..."` finds a booking's lines across services. Publish/process plumbing logs at `debug`; business state transitions log at `info`. Each DLQ'd message produces exactly one `error` line with a `reason` (`invalid_json`, `no_schema`, `validation_failed`, `handler_failed`).
+- **Jobs log JSON too.** Migrate, cleanup and seed scripts validate only the env they need and log as `<service>-migrate`, `<service>-cleanup`, `auth-service-seed-admin`, so Alloy labels them like any service.
+
+`LOG_PRETTY` enables `pino-pretty` for local development only; `pino-pretty` is a dev dependency and is not shipped in service images. To read production logs in a human format, pipe them instead: `kubectl logs <pod> | npx pino-pretty`. Request and correlation IDs are kept as JSON fields, not Loki labels, to keep stream cardinality bounded.
 
 ### Metrics (Prometheus via `prom-client`)
 

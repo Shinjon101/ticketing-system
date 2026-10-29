@@ -1,7 +1,8 @@
-import { createLogger, Logger } from "@ticketing/common";
+import { createLogger } from "@ticketing/common";
 import { env } from "./env";
 
-export const logger: Logger = createLogger({
+export const logger = createLogger({
   name: "payment-service",
   level: env.LOG_LEVEL,
+  pretty: env.LOG_PRETTY,
 });

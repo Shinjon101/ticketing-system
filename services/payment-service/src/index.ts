@@ -43,7 +43,7 @@ const start = async () => {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
   process.on("SIGINT", () => void shutdown("SIGINT"));
   process.on("unhandledRejection", (reason) => {
-    logger.fatal({ reason }, "Unhandled rejection");
+    logger.fatal({ err: reason }, "Unhandled rejection");
     process.exit(1);
   });
   process.on("uncaughtException", (err) => {

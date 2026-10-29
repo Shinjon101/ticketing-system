@@ -4,6 +4,16 @@ import z from "zod";
 import { TOPIC_SCHEMAS } from "./scehmas";
 import { toDlqTopic, Topic } from "./topics";
 import { createProducer, KafkaProducer } from "./producer";
+import { correlationFields } from "./correlation";
+
+type DlqReason =
+  | "invalid_json"
+  | "no_schema"
+  | "validation_failed"
+  | "handler_failed";
+
+const toError = (err: unknown): Error =>
+  err instanceof Error ? err : new Error(String(err));
 
 export interface ConsumerFactoryConfig {
   brokers: string[];
@@ -59,14 +69,17 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
   };
 
   const sendToDlq = async (
+    log: Logger,
+    reason: DlqReason,
     topic: Topic,
     rawValue: string,
     error: Error,
     retryCount: number,
   ): Promise<void> => {
+    const dlqTopic = toDlqTopic(topic);
+
     try {
       const dlq = await getDlqProducer();
-      const dlqTopic = toDlqTopic(topic);
 
       await dlq.publish(dlqTopic as Topic, {
         originalTopic: topic,
@@ -77,18 +90,19 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
         retryCount,
       });
 
-      logger.warn(
-        {
-          topic,
-          dlqTopic,
-          error: error.message,
-          retryCount,
-        },
+      log.error(
+        { err: error, reason, dlqTopic, retryCount },
         "Message sent to DLQ",
       );
     } catch (dlqError) {
-      logger.error(
-        { topic, rawValue, dlqError },
+      log.error(
+        {
+          err: dlqError,
+          reason,
+          dlqTopic,
+          originalError: error.message,
+          valueBytes: rawValue.length,
+        },
         "Failed to send message to DLQ: message may be lost",
       );
     }
@@ -99,12 +113,10 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
     handlers: TopicHandlerMap,
   ): Promise<void> => {
     const { topic, partition, message } = payload;
+    const log = logger.child({ topic, partition, offset: message.offset });
 
     if (!message.value) {
-      logger.warn(
-        { topic, partition, offset: message.offset },
-        "Received message with empty value, skipping",
-      );
+      log.warn("Received message with empty value, skipping");
       return;
     }
 
@@ -119,22 +131,23 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
     try {
       parsedPayload = JSON.parse(rawValue);
     } catch {
-      logger.error({ topic, rawValue }, "Message value is not valid JSON");
       await sendToDlq(
+        log,
+        "invalid_json",
         topic as Topic,
         rawValue,
         new Error("Invalid JSON"),
         retryCount,
       );
-
       return;
     }
 
     const schema = TOPIC_SCHEMAS[topic as Topic] as z.ZodType | undefined;
 
     if (!schema) {
-      logger.error({ topic }, "No schema registered for topic");
       await sendToDlq(
+        log,
+        "no_schema",
         topic as Topic,
         rawValue,
         new Error(`No schema registered for topic: ${topic}`),
@@ -148,39 +161,26 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
     try {
       validatedPayload = schema.parse(parsedPayload);
     } catch (validationError) {
-      logger.error(
-        { topic, rawValue, validationError, parsedPayload },
-        "Message value failed validation",
-      );
       await sendToDlq(
+        log.child(correlationFields(parsedPayload)),
+        "validation_failed",
         topic as Topic,
         rawValue,
-        validationError instanceof Error
-          ? validationError
-          : new Error(String(validationError)),
+        toError(validationError),
         retryCount,
       );
       return;
     }
 
+    const messageLog = log.child(correlationFields(validatedPayload));
+
     const handler = handlers[topic as Topic];
     if (!handler) {
-      logger.warn(
-        { topic },
-        "No handler registered for topic, skipping message",
-      );
+      messageLog.warn("No handler registered for topic, skipping message");
       return;
     }
 
-    logger.info(
-      {
-        topic,
-        partition,
-        offset: message.offset,
-        messageId: (validatedPayload as { messageId?: string }).messageId,
-      },
-      "Processing message",
-    );
+    const startedAt = Date.now();
 
     try {
       await (handler as MessageHandler<unknown>)(validatedPayload, {
@@ -189,27 +189,17 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
         offset: message.offset,
       });
 
-      logger.info(
-        {
-          topic,
-          partition,
-          offset: message.offset,
-          messageId: (validatedPayload as { messageId?: string }).messageId,
-        },
-        "Message processed successfully",
+      messageLog.debug(
+        { durationMs: Date.now() - startedAt },
+        "Message processed",
       );
     } catch (handlerError) {
-      logger.error(
-        { topic, partition, offset: message.offset, handlerError },
-        "Message handler threw : sending to DLQ",
-      );
-
       await sendToDlq(
+        messageLog,
+        "handler_failed",
         topic as Topic,
         rawValue,
-        handlerError instanceof Error
-          ? handlerError
-          : new Error(String(handlerError)),
+        toError(handlerError),
         retryCount + 1,
       );
     }
@@ -221,7 +211,7 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
     await consumer.connect();
     logger.info(
       { brokers, clientId, groupId, topics },
-      "Cosumer connected and subscribing to topics",
+      "Consumer connected and subscribing to topics",
     );
 
     for (const topic of topics) {

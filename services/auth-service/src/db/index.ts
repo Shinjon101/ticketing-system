@@ -1,6 +1,6 @@
 import { createDb } from "@ticketing/db";
 import { env } from "@/config/env";
-import logger from "@/config/logger";
+import { logger } from "@/config/logger";
 import * as schema from "./schema";
 
 export const { connectDB, db, disconnectDB, getPoolStats } = createDb({

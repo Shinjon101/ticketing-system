@@ -1,6 +1,7 @@
 import { Kafka, type ProducerConfig } from "kafkajs";
 import { type Logger } from "pino";
 import { type Topic } from "./topics";
+import { correlationFields } from "./correlation";
 
 export interface ProducerFactoryConfig {
   brokers: string[];
@@ -58,12 +59,8 @@ export function createProducer(config: ProducerFactoryConfig): KafkaProducer {
       ],
     });
 
-    logger.info(
-      {
-        topic,
-        key: key ?? "none",
-        messageId: (message as { messageId?: string }).messageId,
-      },
+    logger.debug(
+      { topic, key, ...correlationFields(message) },
       "Message published",
     );
   };

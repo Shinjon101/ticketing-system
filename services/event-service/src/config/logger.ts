@@ -1,4 +1,8 @@
-import { createLogger, Logger } from "@ticketing/common";
+import { createLogger } from "@ticketing/common";
+import { env } from "./env";
 
-const logger: Logger = createLogger({ name: "event-service" });
-export default logger;
+export const logger = createLogger({
+  name: "event-service",
+  level: env.LOG_LEVEL,
+  pretty: env.LOG_PRETTY,
+});

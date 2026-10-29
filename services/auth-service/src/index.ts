@@ -1,6 +1,6 @@
 import { createApp } from "@/app";
 import { env } from "@/config/env";
-import logger from "@/config/logger";
+import { logger } from "@/config/logger";
 import { connectDB, disconnectDB } from "@/db";
 
 const start = async () => {
@@ -34,7 +34,7 @@ const start = async () => {
   process.on("SIGINT", () => void shutdown("SIGINT"));
 
   process.on("unhandledRejection", (reason) => {
-    logger.fatal({ reason }, "Unhandled promise rejection: shutting down");
+    logger.fatal({ err: reason }, "Unhandled promise rejection: shutting down");
     process.exit(1);
   });
 

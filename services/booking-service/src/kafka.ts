@@ -11,7 +11,7 @@ import {
   TOPICS,
 } from "@ticketing/kafka-client";
 import { env } from "./config/env";
-import logger from "./config/logger";
+import { logger } from "./config/logger";
 import { eventCache } from "./redis/event.cache";
 import { bookingService } from "./booking/booking.service";
 

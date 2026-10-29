@@ -1,4 +1,4 @@
-import logger from "@/config/logger";
+import { logger } from "@/config/logger";
 import { db } from "@/db";
 import type { KafkaProducer } from "@ticketing/kafka-client";
 import { outboxRepository } from "./outbox.repository";

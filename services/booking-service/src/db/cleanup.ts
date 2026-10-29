@@ -1,54 +1,62 @@
-import { drizzle, batchDeleteOlderThan, eq } from "@ticketing/db";
+import { batchDeleteOlderThan, drizzle, eq } from "@ticketing/db";
+import { createEnv, createLogger, logLevelSchema, z } from "@ticketing/common";
 import { Pool } from "pg";
 import "dotenv/config";
 import { outboxEvents } from "@/outbox/outbox.table";
 import { processedEvents } from "@/outbox/processed-events.table";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  console.error("DATABASE_URL environment variable is required");
-  process.exit(1);
-}
+const JOB_NAME = "booking-service-cleanup";
 
-const OUTBOX_RETENTION_DAYS = Number(process.env.OUTBOX_RETENTION_DAYS ?? 7);
-const PROCESSED_EVENTS_RETENTION_DAYS = Number(
-  process.env.PROCESSED_EVENTS_RETENTION_DAYS ?? 14,
+const env = createEnv(
+  z.object({
+    DATABASE_URL: z.string().url(),
+    LOG_LEVEL: logLevelSchema.default("info"),
+    OUTBOX_RETENTION_DAYS: z.coerce.number().int().positive().default(7),
+    PROCESSED_EVENTS_RETENTION_DAYS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(14),
+  }),
+  { serviceName: JOB_NAME },
 );
 
-const pool = new Pool({ connectionString });
+const logger = createLogger({ name: JOB_NAME, level: env.LOG_LEVEL });
+
+const pool = new Pool({ connectionString: env.DATABASE_URL });
 const db = drizzle({ client: pool });
 
 const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000);
 
 const run = async () => {
-  console.log("Running cleanup...");
+  logger.info("Running cleanup");
 
   const outboxDeleted = await batchDeleteOlderThan(db, {
     table: outboxEvents,
     idColumn: outboxEvents.id,
     timestampColumn: outboxEvents.createdAt,
-    cutoff: daysAgo(OUTBOX_RETENTION_DAYS),
+    cutoff: daysAgo(env.OUTBOX_RETENTION_DAYS),
     extraCondition: eq(outboxEvents.published, true),
     label: "outbox_events",
+    logger,
   });
 
   const processedDeleted = await batchDeleteOlderThan(db, {
     table: processedEvents,
     idColumn: processedEvents.messageId,
     timestampColumn: processedEvents.processedAt,
-    cutoff: daysAgo(PROCESSED_EVENTS_RETENTION_DAYS),
+    cutoff: daysAgo(env.PROCESSED_EVENTS_RETENTION_DAYS),
     label: "processed_events",
+    logger,
   });
 
-  console.log(
-    `Cleanup complete. outbox_events: ${outboxDeleted}, processed_events: ${processedDeleted}`,
-  );
+  logger.info({ outboxDeleted, processedDeleted }, "Cleanup complete");
 };
 
 try {
   await run();
-} catch (error) {
-  console.error("Cleanup failed", error);
+} catch (err) {
+  logger.error({ err }, "Cleanup failed");
   process.exitCode = 1;
 } finally {
   await pool.end();
