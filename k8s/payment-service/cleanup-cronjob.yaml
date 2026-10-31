@@ -2,6 +2,8 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: payment-service-cleanup
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   schedule: "10 3 * * *"
   concurrencyPolicy : Forbid
