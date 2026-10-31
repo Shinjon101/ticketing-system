@@ -449,3 +449,17 @@ describe("request logging", () => {
     expect(accessLines()).toHaveLength(0);
   });
 });
+
+describe("security headers", () => {
+  it.each([
+    ["a successful response", "/health"],
+    ["an error response", "/auth/does-not-exist"],
+  ])("sets helmet headers on %s", async (_label, path) => {
+    const res = await request(app).get(path);
+
+    expect(res.headers["x-content-type-options"]).toBe("nosniff");
+    expect(res.headers["strict-transport-security"]).toBeDefined();
+    expect(res.headers["x-frame-options"]).toBe("SAMEORIGIN");
+    expect(res.headers).not.toHaveProperty("x-powered-by");
+  });
+});

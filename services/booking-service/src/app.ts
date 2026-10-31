@@ -8,12 +8,14 @@ import {
   createHttpLogger,
   errorHandler,
   notFoundHandler,
+  securityHeaders,
 } from "@ticketing/common";
 
 export const createApp = (): Application => {
   const app = express();
 
   app.use(createHttpLogger(logger));
+  app.use(securityHeaders);
 
   app.use(express.json());
   app.use(httpMetricsMiddleware);

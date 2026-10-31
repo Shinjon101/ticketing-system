@@ -4,6 +4,7 @@ import {
   createHttpLogger,
   errorHandler,
   notFoundHandler,
+  securityHeaders,
 } from "@ticketing/common";
 import { logger } from "./config/logger";
 import { getPoolStats } from "./db";
@@ -15,6 +16,7 @@ export const createApp = (): Application => {
   const app: Application = express();
 
   app.use(createHttpLogger(logger));
+  app.use(securityHeaders);
   app.use(httpMetricsMiddleware);
   app.use(express.json());
 
