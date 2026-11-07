@@ -36,7 +36,7 @@
 
 ### Key problem being solved
 
-During a flash sale, thousands of users simultaneously attempt to book the last few available seats. Without proper locking and event-driven coordination, the system would oversell - confirming more bookings than seats exist. This system prevents that using Postgres row-level locking and an async saga pattern via Kafka.
+During a flash sale, thousands of users simultaneously attempt to book the last few available seats. Without proper locking and event-driven coordination, the system would oversell - confirming more bookings than seats exist. This system prevents that using Postgres row-level locking and an async saga pattern via Kafka. I'm using this project to learn system design and DevOps concepts.
 
 ### Seat assignment model
 
@@ -50,9 +50,11 @@ For now, Users do not pick a specific seat. They request "X seats for event Y" a
 
 - Handle 1,000+ concurrent booking requests without overselling
 - Guarantee eventual consistency across services
+- Learn Kafka and implement the Saga pattern
 - Recover correctly from partial failures (service crash mid-saga, Outbox pattern is used for this )
 - Structured observability - metrics and logs (Prometheus, Loki and Grafana)
 - Keep the system simple (as much as possible lol) - every component must justify its existence
+- Learning Kubernetes to orchestrate the services
 
 ### Non-goals
 
@@ -81,7 +83,6 @@ For now, Users do not pick a specific seat. They request "X seats for event Y" a
 
 ### To add later
 
-- Notification Service
 - Azure deployment (AKS) + Terraform. In progress: `infra/terraform/` provisions a VNet and node subnet as practice, the AKS cluster itself is next
 
 ---
@@ -106,9 +107,9 @@ For now, Users do not pick a specific seat. They request "X seats for event Y" a
 | Containerisation | Docker (multi-stage builds) | Reproducible environments                                                                  |
 | Orchestration    | Kubernetes via Kind         | Industry standard, horizontal scaling                                                      |
 | CI/CD            | GitHub Actions              | Integrated with repo                                                                       |
-| GitOps / CD      | ArgoCD                      | TODO                                                                                       |
-| Image scanning   | Trivy                       | TODO                                                                                       |
-| IaC              | Terraform (`azurerm`)       | TODO                                                                                       |
+| GitOps / CD      | ArgoCD                      | Git acts as source of truth for architecure, simple rollbacks                                                                                                           |
+| Image scanning   | Trivy                       | Hight to Critical vulnerabilites gets flagged, ensuring safety of the built services                                                                              |
+| IaC              | Terraform (`azurerm`)       | In Progress                                                                              |
 | Logging          | Pino                        | Structured JSON logging for traceability                                                   |
 | Load testing     | k6                          | Scriptable, handles 1000+ virtual users                                                    |
 | Monitoring       | Grafana                     | cost effective, centralized monitoring, customizeable                                      |
@@ -636,8 +637,6 @@ export const TOPICS = {
 
 ## 9. Redis Usage
 
-Redis is never the source of truth. Postgres always is.
-Redis is a performance layer only.
 
 | Key pattern                 | Owner             | Strategy      | TTL   | Purpose                                          |
 | --------------------------- | ----------------- | ------------- | ----- | ------------------------------------------------ |
@@ -1030,7 +1029,7 @@ await batchDeleteOlderThan(db, {
 });
 ```
 
-**Why batched, not a single `DELETE ... WHERE created_at < $cutoff`:**
+**Bathced Delete not a single one`DELETE ... WHERE created_at < $cutoff`:**
 An unbatched delete against a multi-million-row table holds a long-lived
 lock, produces a large WAL burst, and creates autovacuum pressure - all of
 which can degrade the outbox poller running concurrently against the same
@@ -1285,52 +1284,53 @@ The Application (`argocd/application.yaml`) syncs `k8s/` from `main` (recursive,
 
 Migrate Jobs run on every sync (including image bumps). That's safe since Drizzle migrations are idempotent, and it means a new image's migrations always finish before its pods start. The admin seed is idempotent too (creates or promotes the admin user, otherwise no-op).
 
-### Cloud: Azure + Terraform (in progress)
+### Cloud: Azure + Terraform
 
-Infra code lives in `infra/terraform/` (`azurerm ~> 4.0`, Terraform `>= 1.9`). State is local for now and gitignored; it moves to an Azure Blob backend before the cluster exists, since `azurerm_kubernetes_cluster` writes `kube_config` into state in plaintext.
+Infra code lives in `infra/terraform/` (`azurerm ~> 4.0`, Terraform `>= 1.9`). Terraform owns the resource group and everything inside it, so `destroy` leaves nothing behind — after a teardown the only resource groups left in the subscription are the state one and Azure's own `NetworkWatcherRG`.
 
-So far: a VNet (`10.10.0.0/16`) and one node subnet (`10.10.1.0/24`, a `/24` because Azure CNI Overlay takes pod IPs from a separate range, not the subnet). It was written to learn the Terraform loop, not to be built on. The first cluster will use AKS's own managed VNet, because handing AKS a subnet we own means granting its managed identity `Network Contributor` on that subnet, and the service principal Terraform runs as is scoped to a single resource group and so can't create role assignments. Bringing our own VNet is a later exercise.
+What it provisions:
 
-#### Bootstrap
+- **`rg-ticketing-dev`**, as a `resource` rather than a `data` source. The earlier design read a hand-created group and deliberately stopped at its boundary; owning it is the better trade for an environment that gets spun up for a few hours and destroyed, because the guarantee that nothing is left billing is worth more than the guard against an over-broad destroy.
+- **`aks-ticketing-dev`**,  Kubernetes 1.36, `Free` control plane tier, `SystemAssigned` identity, `network_plugin = "azure"` (Azure CNI) on the VNet AKS creates for itself.
+- **Node pool** , `Standard_DS2_v2`, autoscaling between 2 and 3 nodes.
 
-One-off, and run as the account owner rather than the service principal, since every step here is outside what that principal is allowed to do.
+#### Remote state
 
-##### 1. Resource group
+State went to an Azure Blob backend **before** the cluster existed, because `azurerm_kubernetes_cluster` writes `kube_config` into state in plaintext, the container's RBAC is effectively the access control on cluster-admin credentials.
 
-Created out-of-band and only ever read as a `data` source, so Terraform's authority stops at the resource-group boundary and `destroy` can't take the group with it.
-
-```bash
-az group create -n rg-ticketing-dev -l indiasouthcentral
-```
-
-##### 2. Service principal for Terraform
-
-Scoped to that one resource group, not the subscription.
+It lives in its own resource group (`rg-ticketing-tfstate`), outside the blast radius of `terraform destroy`. Terraform can't create the storage account that holds its own state, so this part is bootstrapped by hand, once:
 
 ```bash
-az ad sp create-for-rbac --name sp-terraform-ticketing \
-  --role Contributor \
-  --scopes /subscriptions/<subscription-id>/resourceGroups/rg-ticketing-dev
+az group create -n rg-ticketing-tfstate -l indiasouthcentral
+
+az storage account create -n <storage-account> -g rg-ticketing-tfstate -l indiasouthcentral   --sku Standard_LRS --kind StorageV2 --min-tls-version TLS1_2   --allow-blob-public-access false --allow-shared-key-access false
+
+az storage account blob-service-properties update -n <storage-account> -g rg-ticketing-tfstate   --enable-versioning true --enable-delete-retention true --delete-retention-days 7
+
+az role assignment create --assignee <your-upn>   --role "Storage Blob Data Contributor"   --scope "<storage-account-id>"
+
+az storage container create -n tfstate --account-name <storage-account> --auth-mode login
 ```
 
-`appId`, `password` and `tenant` are printed once. The narrow scope costs two things: the principal can't register resource providers, which is a subscription-level write, hence `resource_provider_registrations = "none"` in the provider block and the handful that are needed registered by hand (`az provider show -n <namespace> --query registrationState`); and it can't create role assignments, which is what rules out a bring-your-own subnet for the first cluster.
+Three things there are deliberate:
 
-##### 3. Credentials in the shell
+- **`--allow-shared-key-access false`.** `Contributor` on a storage account includes `listKeys`, so without this the data-plane role below is advisory rather than a boundary. Disabling shared keys makes RBAC the only way in.
+- **`Storage Blob Data Contributor`, not `Contributor`.** Azure splits storage into a control plane (manage the account) and a data plane (read the bytes). Owner grants the first and not the second, which is the error everyone hits once. Contributor rather than Reader because Terraform takes a **blob lease** to lock state, and leasing is a write.
+- **Versioning.** Local state gets a free `.tfstate.backup` on every write; remote state gets nothing. Versioning is the replacement, and the only recovery from a bad `state rm`.
 
-Read from the environment by the provider, never from a `.tf` file or a committed `.tfvars`.
 
-```powershell
-$env:ARM_CLIENT_ID       = "<appId>"
-$env:ARM_CLIENT_SECRET   = "<password>"
-$env:ARM_TENANT_ID       = "<tenant>"
-$env:ARM_SUBSCRIPTION_ID = "<subscription-id>"
-```
+#### Credentials
+
+Terraform runs as the account owner via `az login`; the provider picks the CLI session up automatically. No secret is stored anywhere.
+
+A service principal scoped to the single resource group was tried first and dropped. The scope was sound, but it couldn't create the resource group, register providers, or create role assignments, so every interesting step had to be run as the owner anyway, and the principal was never actually exercised. A service principal is a *CI* concern, and when CI runs Terraform it should use OIDC federation rather than a client secret, so that scaffolding was deleted rather than carried.
 
 **References followed:**
 
-- [HashiCorp's Azure get-started tutorial](https://developer.hashicorp.com/terraform/tutorials/azure-get-started/azure-build) and [MS Learn's AKS + Terraform quickstart](https://learn.microsoft.com/en-us/azure/aks/learn/quick-kubernetes-deploy-terraform)
-- For the overall shape, the [service principal + client secret guide](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/guides/service_principal_client_secret)
-- Studying about [Vnet](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/virtual_network)
+- [HashiCorp's Azure get-started tutorial](https://developer.hashicorp.com/terraform/tutorials/azure-get-started/azure-build) and [MS Learn's AKS + Terraform quickstart](https://learn.microsoft.com/en-us/azure/aks/learn/quick-kubernetes-deploy-terraform) for the overall shape
+- [Store Terraform state in Azure Storage](https://learn.microsoft.com/en-us/azure/developer/terraform/store-state-in-azure-storage) followed, but with Entra ID auth instead of the `ARM_ACCESS_KEY` the article uses
+- [`backend "azurerm"`](https://developer.hashicorp.com/terraform/language/backend/azurerm) and [authorizing blob access with Entra ID](https://learn.microsoft.com/en-us/azure/storage/blobs/authorize-access-azure-active-directory)
+- [`azurerm_kubernetes_cluster`](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/kubernetes_cluster) and [AKS node resource reservations](https://learn.microsoft.com/en-us/azure/aks/node-resource-reservations)
 
 ## 15. CI/CD: GitHub Actions
 
