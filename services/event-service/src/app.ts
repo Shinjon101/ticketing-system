@@ -34,6 +34,8 @@ export const createApp = (): Application => {
     });
   });
 
+  console.log("Dummy log to test GitOps - Event service");
+
   app.use(notFoundHandler);
 
   app.use(errorHandler);
