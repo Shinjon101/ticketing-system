@@ -34,7 +34,7 @@ spec:
     spec:
       containers:
         - name: auth-service
-          image: ghcr.io/shinjon101/ticketing-auth-service:sha-f8f8bfe
+          image: ghcr.io/shinjon101/ticketing-auth-service:sha-36392b1
           ports:
             - containerPort: 4003
           envFrom:

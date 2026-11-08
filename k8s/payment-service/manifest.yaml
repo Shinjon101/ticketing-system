@@ -33,7 +33,7 @@ spec:
     spec:
       containers:
         - name: payment-service
-          image: ghcr.io/shinjon101/ticketing-payment-service:sha-f8f8bfe
+          image: ghcr.io/shinjon101/ticketing-payment-service:sha-36392b1
           ports:
             - containerPort: 4007
           envFrom:
