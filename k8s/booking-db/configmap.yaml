@@ -4,3 +4,4 @@ metadata:
   name: booking-db-config
 data:
   POSTGRES_DB: "booking_db"
+  PGDATA: "/var/lib/postgresql/data/pgdata"

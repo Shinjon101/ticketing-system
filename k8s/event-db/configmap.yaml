@@ -4,3 +4,4 @@ metadata:
   name: event-db-config
 data:
   POSTGRES_DB: "event_db"
+  PGDATA: "/var/lib/postgresql/data/pgdata"

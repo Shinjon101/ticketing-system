@@ -18,3 +18,4 @@ data:
   KAFKA_LOG_RETENTION_HOURS: "168"
   KAFKA_NUM_PARTITIONS: "3"
   KAFKA_HEAP_OPTS: "-Xmx768m -Xms768m"
+  KAFKA_LOG_DIRS: "/var/lib/kafka/data/logs"

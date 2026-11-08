@@ -4,3 +4,4 @@ metadata:
   name: payment-db-config
 data:
   POSTGRES_DB: "payment_db"
+  PGDATA: "/var/lib/postgresql/data/pgdata"

@@ -4,3 +4,4 @@ metadata:
   name: inventory-db-config
 data:
   POSTGRES_DB: "inventory_db"
+  PGDATA: "/var/lib/postgresql/data/pgdata"

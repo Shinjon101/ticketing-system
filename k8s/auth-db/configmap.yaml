@@ -4,3 +4,4 @@ metadata:
   name: auth-db-config
 data:
   POSTGRES_DB: "auth_db"
+  PGDATA: "/var/lib/postgresql/data/pgdata"
