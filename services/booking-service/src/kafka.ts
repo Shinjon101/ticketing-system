@@ -14,6 +14,7 @@ import { env } from "./config/env";
 import { logger } from "./config/logger";
 import { eventCache } from "./redis/event.cache";
 import { bookingService } from "./booking/booking.service";
+import { observeConsumedMessage } from "./metrics";
 
 export const createKafkaProducer = (): KafkaProducer => {
   return createProducer({
@@ -29,6 +30,7 @@ export const startKafkaConsumer = async (): Promise<() => Promise<void>> => {
     clientId: "booking-service",
     groupId: "booking-service-group",
     logger,
+    onMessageObserved: observeConsumedMessage,
   });
 
   await consumer.subscribe({

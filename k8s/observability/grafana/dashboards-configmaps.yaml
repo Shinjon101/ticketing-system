@@ -667,3 +667,536 @@ data:
         "uid": "sadlil-loki-apps-dashboard",
         "version": 4
     }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-saga-pipeline
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  saga-pipeline.json: |
+    {
+      "title": "Saga Pipeline",
+      "uid": "saga-pipeline",
+      "description": "Where a booking spends its time between creation and seat_held, hop by hop.",
+      "tags": [
+        "ticketing",
+        "saga",
+        "load-test"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "10s",
+      "time": {
+        "from": "now-30m",
+        "to": "now"
+      },
+      "panels": [
+        {
+          "type": "row",
+          "title": "Saga, end to end",
+          "collapsed": false,
+          "panels": [],
+          "id": 1,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Seat resolution latency (server side)",
+          "description": "Booking created until inventory's answer is visible to readers. No k6 polling floor, so this is the real number at low load.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.5, sum by (le, outcome) (rate(booking_seat_resolution_seconds_bucket[$__rate_interval])))",
+              "legendFormat": "p50 {{outcome}}"
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le, outcome) (rate(booking_seat_resolution_seconds_bucket[$__rate_interval])))",
+              "legendFormat": "p95 {{outcome}}"
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.99, sum by (le, outcome) (rate(booking_seat_resolution_seconds_bucket[$__rate_interval])))",
+              "legendFormat": "p99 {{outcome}}"
+            }
+          ],
+          "id": 2,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 1
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Bookings in vs answers out",
+          "description": "If 'created' stays above 'resolved', a queue somewhere in the saga is growing. The panels below show which one.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(booking_created_total[$__rate_interval]))",
+              "legendFormat": "created"
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (outcome) (rate(booking_seat_resolution_seconds_count[$__rate_interval]))",
+              "legendFormat": "resolved {{outcome}}"
+            }
+          ],
+          "id": 3,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 1
+          }
+        },
+        {
+          "type": "row",
+          "title": "Where the time goes (p95 per hop, in saga order)",
+          "collapsed": false,
+          "panels": [],
+          "id": 4,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 9
+          }
+        },
+        {
+          "type": "bargauge",
+          "title": "p95 per hop",
+          "description": "Each bar is one hop of the saga, in order. The first bar to grow under load is the bottleneck; the hops after it only wait.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "min": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "orientation": "horizontal",
+            "displayMode": "basic",
+            "showUnfilled": true,
+            "reduceOptions": {
+              "calcs": [
+                "mean"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(outbox_publish_delay_seconds_bucket{serviceName=\"booking-service\", topic=\"seat-reserve-requested\"}[$__rate_interval])))",
+              "legendFormat": "1. Booking outbox"
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(kafka_consumer_message_wait_seconds_bucket{serviceName=\"inventory-service\", topic=\"seat-reserve-requested\"}[$__rate_interval])))",
+              "legendFormat": "2. Kafka -> inventory"
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(kafka_consumer_processing_seconds_bucket{serviceName=\"inventory-service\", topic=\"seat-reserve-requested\"}[$__rate_interval])))",
+              "legendFormat": "3. Inventory handler"
+            },
+            {
+              "refId": "D",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(outbox_publish_delay_seconds_bucket{serviceName=\"inventory-service\", topic=~\"seat-reserved|seat-failed\"}[$__rate_interval])))",
+              "legendFormat": "4. Inventory outbox"
+            },
+            {
+              "refId": "E",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(kafka_consumer_message_wait_seconds_bucket{serviceName=\"booking-service\", topic=~\"seat-reserved|seat-failed\"}[$__rate_interval])))",
+              "legendFormat": "5. Kafka -> booking"
+            },
+            {
+              "refId": "F",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(kafka_consumer_processing_seconds_bucket{serviceName=\"booking-service\", topic=~\"seat-reserved|seat-failed\"}[$__rate_interval])))",
+              "legendFormat": "6. Booking handler"
+            }
+          ],
+          "id": 5,
+          "gridPos": {
+            "h": 9,
+            "w": 10,
+            "x": 0,
+            "y": 10
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "p95 per hop over time",
+          "description": "Same hops as the bars. Watch which line lifts first as the load ramps.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(outbox_publish_delay_seconds_bucket{serviceName=\"booking-service\", topic=\"seat-reserve-requested\"}[$__rate_interval])))",
+              "legendFormat": "1. Booking outbox"
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(kafka_consumer_message_wait_seconds_bucket{serviceName=\"inventory-service\", topic=\"seat-reserve-requested\"}[$__rate_interval])))",
+              "legendFormat": "2. Kafka -> inventory"
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(kafka_consumer_processing_seconds_bucket{serviceName=\"inventory-service\", topic=\"seat-reserve-requested\"}[$__rate_interval])))",
+              "legendFormat": "3. Inventory handler"
+            },
+            {
+              "refId": "D",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(outbox_publish_delay_seconds_bucket{serviceName=\"inventory-service\", topic=~\"seat-reserved|seat-failed\"}[$__rate_interval])))",
+              "legendFormat": "4. Inventory outbox"
+            },
+            {
+              "refId": "E",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(kafka_consumer_message_wait_seconds_bucket{serviceName=\"booking-service\", topic=~\"seat-reserved|seat-failed\"}[$__rate_interval])))",
+              "legendFormat": "5. Kafka -> booking"
+            },
+            {
+              "refId": "F",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(kafka_consumer_processing_seconds_bucket{serviceName=\"booking-service\", topic=~\"seat-reserved|seat-failed\"}[$__rate_interval])))",
+              "legendFormat": "6. Booking handler"
+            }
+          ],
+          "id": 6,
+          "gridPos": {
+            "h": 9,
+            "w": 14,
+            "x": 10,
+            "y": 10
+          }
+        },
+        {
+          "type": "row",
+          "title": "Saturation",
+          "collapsed": false,
+          "panels": [],
+          "id": 7,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 19
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Outbox poll cycles by result",
+          "description": "'full' means the poller took a whole batch, so rows were probably still waiting. A growing share of full cycles is the poller saturating.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (serviceName, result) (rate(outbox_poll_duration_seconds_count{result!=\"empty\"}[$__rate_interval]))",
+              "legendFormat": "{{serviceName}} {{result}}"
+            }
+          ],
+          "id": 8,
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 20
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Outbox poll duration p95",
+          "description": "Fetch, publish and mark published, for cycles that found rows. Growth here with flat batch sizes points at the query, e.g. a table scan.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.95, sum by (le, serviceName) (rate(outbox_poll_duration_seconds_bucket{result!=\"empty\"}[$__rate_interval])))",
+              "legendFormat": "{{serviceName}}"
+            }
+          ],
+          "id": 9,
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 20
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Event-loop lag p99",
+          "description": "One Node thread runs the HTTP server, the consumer and the poller. High lag means they're queuing behind each other for CPU.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max by (serviceName, pod) (nodejs_eventloop_lag_p99_seconds)",
+              "legendFormat": "{{serviceName}} {{pod}}"
+            }
+          ],
+          "id": 10,
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 20
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "DB pool utilisation",
+          "description": "Active connections over the pool size. Near 100% together with waiting clients means the pool is the limit.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (serviceName, pod) (db_pool_connections{state=\"active\"}) / sum by (serviceName, pod) (db_pool_max_connections)",
+              "legendFormat": "{{serviceName}} {{pod}}"
+            }
+          ],
+          "id": 11,
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 28
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Queries waiting for a connection",
+          "description": "Anything above 0 means queries are queuing for a connection rather than running.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (serviceName, pod) (db_pool_waiting_clients)",
+              "legendFormat": "{{serviceName}} {{pod}}"
+            }
+          ],
+          "id": 12,
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 28
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Retries and DLQ",
+          "description": "Handler retries and messages that ended in the DLQ or errored. A fast run with these rising is not a good run.",
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "never"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (serviceName, topic) (rate(kafka_consumer_handler_retries_total[$__rate_interval]))",
+              "legendFormat": "retries {{serviceName}} {{topic}}"
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (serviceName, topic, outcome) (rate(kafka_consumer_processing_seconds_count{outcome=~\"dlq|error\"}[$__rate_interval]))",
+              "legendFormat": "{{outcome}} {{serviceName}} {{topic}}"
+            }
+          ],
+          "id": 13,
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 28
+          }
+        }
+      ]
+    }

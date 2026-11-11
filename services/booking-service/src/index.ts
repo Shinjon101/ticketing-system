@@ -1,7 +1,9 @@
 import "@/config/env";
 
+import { registerDbPoolMetrics } from "@ticketing/common";
 import { createApp } from "./app";
-import { connectDB, disconnectDB } from "@/db";
+import { connectDB, disconnectDB, getPoolStats } from "@/db";
+import { registry } from "@/metrics";
 import { connectRedis, disconnectRedis } from "@/redis";
 import { createKafkaProducer, startKafkaConsumer } from "./kafka";
 import { startOutboxPoller, stopOutboxPoller } from "@/outbox/outbox.poller";
@@ -10,6 +12,7 @@ import { logger } from "@/config/logger";
 
 const start = async () => {
   await connectDB();
+  registerDbPoolMetrics(registry, getPoolStats);
 
   await connectRedis();
 

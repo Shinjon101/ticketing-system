@@ -11,6 +11,7 @@ import {
 import { env } from "./config/env";
 import { logger } from "./config/logger";
 import { seatService } from "./seats/seat.service";
+import { observeConsumedMessage } from "./metrics";
 
 export const createKafkaProducer = (): KafkaProducer =>
   createProducer({
@@ -27,6 +28,7 @@ export const startKafkaConsumer = async (): Promise<
     clientId: "inventory-service",
     groupId: "inventory-service-group",
     logger,
+    onMessageObserved: observeConsumedMessage,
   });
 
   await consumer.subscribe({

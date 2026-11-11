@@ -1,7 +1,9 @@
 import { db } from "@/db";
 import { logger } from "@/config/logger";
+import { outboxMetrics } from "@/metrics";
 import { outboxRepository } from "./outbox.repository";
 import type { KafkaProducer } from "@ticketing/kafka-client";
+import type { OutboxCycleResult } from "@ticketing/common";
 
 const POLL_INTERVAL_MS = 500;
 const BATCH_SIZE = 100;
@@ -27,6 +29,10 @@ export function stopOutboxPoller(): void {
 }
 
 async function poll(producer: KafkaProducer): Promise<void> {
+  const endCycle = outboxMetrics.startCycle();
+  const published: Array<{ topic: string; createdAt: Date; at: number }> = [];
+  let result: OutboxCycleResult = "empty";
+
   try {
     await db.transaction(async (tx) => {
       const rows = await outboxRepository.fetchUnpublishedBatch(tx, BATCH_SIZE);
@@ -35,6 +41,11 @@ async function poll(producer: KafkaProducer): Promise<void> {
 
       for (const row of rows) {
         await producer.publish(row.topic, row.payload, row.payload.bookingId);
+        published.push({
+          topic: row.topic,
+          createdAt: row.createdAt,
+          at: Date.now(),
+        });
       }
 
       await outboxRepository.markPublished(
@@ -42,10 +53,20 @@ async function poll(producer: KafkaProducer): Promise<void> {
         rows.map((r) => r.id),
       );
 
+      result = rows.length === BATCH_SIZE ? "full" : "partial";
       logger.debug({ count: rows.length }, "Outbox batch published");
     });
+
+    // Recorded only after commit. If the transaction rolls back these rows are
+    // published again next cycle and measured then.
+    for (const event of published) {
+      outboxMetrics.observePublished(event.topic, event.createdAt, event.at);
+    }
   } catch (err) {
+    result = "error";
     logger.error({ err }, "Outbox poll cycle failed :- will retry");
+  } finally {
+    endCycle(result);
   }
 }
 

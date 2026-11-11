@@ -1427,6 +1427,26 @@ Booking Service additionally exposes business metrics:
 | `booking_failed_total`                | Counter | `reason` | Bookings that reached `failed`, by failure reason             |
 | `booking_duplicate_idempotency_total` | Counter | NA       | Requests resolved via idempotency key instead of a new insert |
 
+#### Saga pipeline metrics
+
+The 160 req/s load test showed saga latency climbing to a 12.5s p95 without saying where the time went. Each hop now records how long a booking waits and how long it's worked on, so the first hop to grow under load identifies the bottleneck. Booking and Inventory carry them, since k6 times the saga up to `seat_held`.
+
+| Metric                                 | Type      | Labels             | Where                     | Meaning                                                  |
+| -------------------------------------- | --------- | ------------------ | ------------------------- | -------------------------------------------------------- |
+| `booking_seat_resolution_seconds`      | Histogram | `outcome`          | Booking saga handlers     | Booking created until inventory's answer is readable     |
+| `outbox_publish_delay_seconds`         | Histogram | `topic`            | Outbox poller             | How long a row waited before reaching Kafka              |
+| `outbox_poll_duration_seconds`         | Histogram | `result`           | Outbox poller             | One cycle; `result="full"` means rows were left behind   |
+| `kafka_consumer_message_wait_seconds`  | Histogram | `topic`            | `@ticketing/kafka-client` | Produce timestamp until this consumer starts the message |
+| `kafka_consumer_processing_seconds`    | Histogram | `topic`, `outcome` | `@ticketing/kafka-client` | Validation and handler time, retry backoff included      |
+| `kafka_consumer_handler_retries_total` | Counter   | `topic`            | `@ticketing/kafka-client` | Handler attempts beyond the first                        |
+| `db_pool_connections`                  | Gauge     | `state`            | Read at scrape            | Active and idle connections                              |
+| `db_pool_max_connections`              | Gauge     | NA                 | Read at scrape            | Configured pool size                                     |
+| `db_pool_waiting_clients`              | Gauge     | NA                 | Read at scrape            | Queries waiting for a free connection                    |
+
+Two design choices worth knowing. `kafka-client` doesn't depend on Prometheus: it calls an optional `onMessageObserved` hook, and a throwing observer is logged and swallowed so metrics can never fail a message. Labels are bounded sets (`topic`, `outcome`, `result`, `state`), never IDs, so series count stays fixed regardless of traffic.
+
+To read it, open the **Saga Pipeline** dashboard and ramp load: the first per-hop bar to grow is the bottleneck, and the hops after it are only waiting.
+
 ### Log collection: Grafana Alloy → Loki
 
 Promtail is discontinued upstream; Alloy is its replacement and is what's actually deployed. Alloy discovers all Docker containers, extracts Pino's JSON fields (`level`, `name`, `time`), and relabels the numeric Pino level (`30`) into a human string (`info`) via a `stage.template` Go template, non-JSON container logs (Postgres, Kafka, Redis) that don't match the JSON stage get labeled `unknown` rather than defaulting to `info`, so infra errors aren't silently miscategorized.
@@ -1439,6 +1459,7 @@ docker-compose provisions them from `infra/observability/grafana/dashboards/`, K
 - **System Logs:** cross-service log volume and error rate, with `service` and `level` template variables for filtering.
 - **NodeJS Application Dashboard :** per-instance process CPU, memory, heap, event loop lag, active handles and restarts.
 - **Logs / App** (k8s only): log explorer per app.
+- **Saga Pipeline:** p95 per saga hop in order, booking throughput in vs answers out, and saturation (outbox cycle results, DB pool, event-loop lag, retries and DLQ). Built for load tests.
 
 On k8s, Prometheus scrapes the services through a `ServiceMonitor` (`k8s/observability/servicemonitor-ticketing.yaml`) that matches the 5 services' `app` label and `http` port in `default`.
 

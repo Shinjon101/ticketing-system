@@ -23,6 +23,7 @@ import {
   bookingCreatedTotal,
   bookingDuplicateTotal,
   bookingFailedTotal,
+  bookingSeatResolutionSeconds,
 } from "@/metrics";
 
 export interface CreateBookingInput {
@@ -161,7 +162,11 @@ export const bookingService = {
       return updated;
     });
 
-    if (updatedBooking) await bookingCache.set(updatedBooking);
+    if (updatedBooking) {
+      await bookingCache.set(updatedBooking);
+      // After the cache write, since reads are served from the cache first.
+      observeSeatResolution("seat_held", updatedBooking.createdAt);
+    }
   },
   onSeatFailed: async (msg: SeatFailed): Promise<void> => {
     const { messageId, bookingId } = msg;
@@ -184,6 +189,7 @@ export const bookingService = {
     if (updatedBooking) {
       await bookingCache.set(updatedBooking);
       bookingFailedTotal.inc({ reason: msg.reason });
+      observeSeatResolution("failed", updatedBooking.createdAt);
     }
   },
 
@@ -251,6 +257,18 @@ export const bookingService = {
       bookingFailedTotal.inc({ reason: msg.reason });
     }
   },
+};
+
+// createdAt comes from Postgres's clock and Date.now() from this pod's, so
+// clamp the small negatives that clock skew can produce.
+const observeSeatResolution = (
+  outcome: "seat_held" | "failed",
+  createdAt: Date,
+): void => {
+  const seconds = (Date.now() - createdAt.getTime()) / 1000;
+  if (Number.isFinite(seconds)) {
+    bookingSeatResolutionSeconds.observe({ outcome }, Math.max(0, seconds));
+  }
 };
 
 const isUniqueViolation = (err: unknown, constraint?: string): boolean => {

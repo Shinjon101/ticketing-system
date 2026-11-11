@@ -43,6 +43,7 @@ import { eventCache } from "@/redis/event.cache";
 import { idempotencyCache } from "@/redis/idempotency";
 import { bookingCache } from "@/redis/booking.cache";
 import { db } from "@/db";
+import { bookingSeatResolutionSeconds } from "@/metrics";
 import { TOPICS } from "@ticketing/kafka-client";
 import type { Booking } from "@/booking/booking.table";
 
@@ -55,6 +56,17 @@ const activeEvent = {
   eventDate: new Date(Date.now() + 86_400_000).toISOString(),
   saleStartsAt: new Date(Date.now() - 1000).toISOString(),
   status: "active" as const,
+};
+
+const resolution = async (outcome: string) => {
+  const { values } = await bookingSeatResolutionSeconds.get();
+  const pick = (suffix: string) =>
+    values.find(
+      (v) =>
+        v.metricName === `booking_seat_resolution_seconds_${suffix}` &&
+        v.labels.outcome === outcome,
+    )?.value ?? 0;
+  return { count: pick("count"), sum: pick("sum") };
 };
 
 const makeBooking = (overrides: Partial<Booking> = {}): Booking => ({
@@ -217,6 +229,35 @@ describe("bookingService: saga transitions", () => {
 
     expect(bookingRepository.findByIdWithTx).not.toHaveBeenCalled();
     expect(outboxRepository.createWithTx).not.toHaveBeenCalled();
+  });
+
+  it("onSeatReserved records the time from booking creation to seat_held", async () => {
+    const booking = makeBooking({
+      id: seatReservedMsg.bookingId,
+      createdAt: new Date(Date.now() - 3_000),
+    });
+    vi.mocked(bookingRepository.isProcessed).mockResolvedValue(false);
+    vi.mocked(bookingRepository.findByIdWithTx).mockResolvedValue(booking);
+    vi.mocked(bookingRepository.updateWithTx).mockResolvedValue({
+      ...booking,
+      status: "seat_held",
+    });
+    const before = await resolution("seat_held");
+
+    await bookingService.onSeatReserved(seatReservedMsg);
+
+    const after = await resolution("seat_held");
+    expect(after.count - before.count).toBe(1);
+    expect(after.sum - before.sum).toBeGreaterThanOrEqual(3);
+  });
+
+  it("onSeatReserved records nothing for a redelivered message", async () => {
+    vi.mocked(bookingRepository.isProcessed).mockResolvedValue(true);
+    const before = await resolution("seat_held");
+
+    await bookingService.onSeatReserved(seatReservedMsg);
+
+    expect((await resolution("seat_held")).count).toBe(before.count);
   });
 
   it("onSeatFailed transitions the booking to failed", async () => {

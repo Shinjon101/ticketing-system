@@ -1,4 +1,6 @@
-import { connectDB, disconnectDB } from "@/db";
+import { registerDbPoolMetrics } from "@ticketing/common";
+import { connectDB, disconnectDB, getPoolStats } from "@/db";
+import { registry } from "@/metrics";
 import { connectRedis, disconnectRedis } from "@/redis";
 import { createKafkaProducer, startKafkaConsumer } from "@/kafka";
 import { createApp } from "@/app";
@@ -8,6 +10,7 @@ import { startOutboxPoller, stopOutboxPoller } from "./outbox/outbox.poller";
 
 const start = async () => {
   await connectDB();
+  registerDbPoolMetrics(registry, getPoolStats);
 
   await connectRedis();
 

@@ -39,6 +39,7 @@ export interface PoolStats {
   idle: number;
   waiting: number;
   active: number;
+  max: number;
 }
 
 export type DbTransaction<TSchema extends Record<string, unknown>> =
@@ -148,6 +149,7 @@ export function createDb<TSchema extends Record<string, unknown>>(
     idle: pool.idleCount,
     waiting: pool.waitingCount,
     active: pool.totalCount - pool.idleCount,
+    max,
   });
 
   const connectDB = async (): Promise<void> => {

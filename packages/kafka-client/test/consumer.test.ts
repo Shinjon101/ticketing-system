@@ -41,7 +41,10 @@ vi.mock("kafkajs", () => ({
   },
 }));
 
-import { createConsumer } from "../src/consumer";
+import {
+  createConsumer,
+  type ConsumedMessageObservation,
+} from "../src/consumer";
 import { DlqMessageSchema } from "../src/scehmas";
 import { TOPICS } from "../src/topics";
 
@@ -61,8 +64,9 @@ const logger = pino(
 );
 
 const handler = vi.fn<(message: unknown) => Promise<void>>();
+const observed: ConsumedMessageObservation[] = [];
 
-const deliver = async (value: string) => {
+const deliver = async (value: string, timestamp?: string) => {
   const heartbeat = vi.fn(async () => {});
   await broker.eachMessage!({
     topic: TOPICS.SEAT_RESERVED,
@@ -72,6 +76,7 @@ const deliver = async (value: string) => {
       key: Buffer.from(bookingId),
       value: Buffer.from(value),
       headers: {},
+      timestamp,
     },
     heartbeat,
     pause: () => () => {},
@@ -92,6 +97,7 @@ beforeEach(async () => {
   broker.sent = [];
   broker.failSend = false;
   logLines.length = 0;
+  observed.length = 0;
   handler.mockReset();
 
   const consumer = createConsumer({
@@ -100,6 +106,7 @@ beforeEach(async () => {
     groupId: "test-group",
     logger,
     retry: { attempts: 3, baseDelayMs: 0 },
+    onMessageObserved: (observation) => void observed.push(observation),
   });
   await consumer.subscribe({ [TOPICS.SEAT_RESERVED]: handler });
 });
@@ -169,5 +176,81 @@ describe("handler retries", () => {
         retry: { attempts: 0, baseDelayMs: 0 },
       }),
     ).toThrow("retry.attempts must be at least 1");
+  });
+});
+
+describe("message observation", () => {
+  it("reports wait time from the produce timestamp and a processed outcome", async () => {
+    handler.mockResolvedValue();
+
+    await deliver(seatReserved, String(Date.now() - 2_000));
+
+    expect(observed).toEqual([
+      expect.objectContaining({
+        topic: TOPICS.SEAT_RESERVED,
+        outcome: "processed",
+        attempts: 1,
+      }),
+    ]);
+    expect(observed[0]!.waitSeconds).toBeGreaterThanOrEqual(2);
+    expect(observed[0]!.waitSeconds).toBeLessThan(10);
+  });
+
+  it("counts every attempt when the handler needed retries", async () => {
+    handler
+      .mockRejectedValueOnce(new Error("deadlock detected"))
+      .mockResolvedValueOnce();
+
+    await deliver(seatReserved);
+
+    expect(observed[0]).toMatchObject({ outcome: "processed", attempts: 2 });
+  });
+
+  it("reports dlq once the handler runs out of attempts", async () => {
+    handler.mockRejectedValue(new Error("deadlock detected"));
+
+    await deliver(seatReserved);
+
+    expect(observed[0]).toMatchObject({ outcome: "dlq", attempts: 3 });
+  });
+
+  it("reports dlq without attempts when the message never reaches the handler", async () => {
+    await deliver("{not json");
+
+    expect(observed[0]).toMatchObject({ outcome: "dlq", attempts: 0 });
+  });
+
+  it("reports no wait time when the record has no timestamp", async () => {
+    handler.mockResolvedValue();
+
+    await deliver(seatReserved);
+
+    expect(observed[0]!.waitSeconds).toBeNull();
+  });
+
+  it("reports error and still rethrows when the DLQ publish fails", async () => {
+    handler.mockRejectedValue(new Error("deadlock detected"));
+    broker.failSend = true;
+
+    await expect(deliver(seatReserved)).rejects.toThrow("broker unavailable");
+    expect(observed[0]).toMatchObject({ outcome: "error" });
+  });
+
+  it("keeps consuming when the observer itself throws", async () => {
+    handler.mockResolvedValue();
+    const consumer = createConsumer({
+      brokers: ["localhost:9092"],
+      clientId: "test",
+      groupId: "test-group",
+      logger,
+      onMessageObserved: () => {
+        throw new Error("metrics broke");
+      },
+    });
+    await consumer.subscribe({ [TOPICS.SEAT_RESERVED]: handler });
+
+    await expect(deliver(seatReserved)).resolves.toBeDefined();
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(broker.sent).toHaveLength(0);
   });
 });

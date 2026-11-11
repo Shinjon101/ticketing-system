@@ -25,12 +25,32 @@ export interface RetryOptions {
 
 const DEFAULT_RETRY: RetryOptions = { attempts: 3, baseDelayMs: 200 };
 
+// "error" means processing threw (e.g. the DLQ was unreachable), so the offset
+// stays uncommitted and Kafka will redeliver the message.
+export type ConsumedMessageOutcome = "processed" | "dlq" | "skipped" | "error";
+
+export interface ConsumedMessageObservation {
+  topic: string;
+  // Measured from the record's produce timestamp, so it covers time in Kafka
+  // plus time queued behind earlier messages. Null if the record has none.
+  waitSeconds: number | null;
+  processingSeconds: number;
+  attempts: number;
+  outcome: ConsumedMessageOutcome;
+}
+
+interface ProcessResult {
+  outcome: Exclude<ConsumedMessageOutcome, "error">;
+  attempts: number;
+}
+
 export interface ConsumerFactoryConfig {
   brokers: string[];
   clientId: string;
   groupId: string;
   logger: Logger;
   retry?: RetryOptions;
+  onMessageObserved?: (observation: ConsumedMessageObservation) => void;
 }
 
 export type MessageHandler<T> = (
@@ -48,7 +68,7 @@ export interface KafkaConsumer {
 }
 
 export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
-  const { brokers, clientId, groupId, logger } = config;
+  const { brokers, clientId, groupId, logger, onMessageObserved } = config;
   const retry = config.retry ?? DEFAULT_RETRY;
 
   if (retry.attempts < 1) {
@@ -124,13 +144,13 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
   const processMessage = async (
     payload: EachMessagePayload,
     handlers: TopicHandlerMap,
-  ): Promise<void> => {
+  ): Promise<ProcessResult> => {
     const { topic, partition, message } = payload;
     const log = logger.child({ topic, partition, offset: message.offset });
 
     if (!message.value) {
       log.warn("Received message with empty value, skipping");
-      return;
+      return { outcome: "skipped", attempts: 0 };
     }
 
     const rawValue = message.value.toString();
@@ -150,7 +170,7 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
         new Error("Invalid JSON"),
         1,
       );
-      return;
+      return { outcome: "dlq", attempts: 0 };
     }
 
     const schema = TOPIC_SCHEMAS[topic as Topic] as z.ZodType | undefined;
@@ -165,7 +185,7 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
         new Error(`No schema registered for topic: ${topic}`),
         1,
       );
-      return;
+      return { outcome: "dlq", attempts: 0 };
     }
 
     let validatedPayload: unknown;
@@ -182,7 +202,7 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
         toError(validationError),
         1,
       );
-      return;
+      return { outcome: "dlq", attempts: 0 };
     }
 
     const messageLog = log.child(correlationFields(validatedPayload));
@@ -190,7 +210,7 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
     const handler = handlers[topic as Topic];
     if (!handler) {
       messageLog.warn("No handler registered for topic, skipping message");
-      return;
+      return { outcome: "skipped", attempts: 0 };
     }
 
     const meta = { topic, partition, offset: message.offset };
@@ -204,7 +224,7 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
           { durationMs: Date.now() - startedAt, attempt },
           "Message processed",
         );
-        return;
+        return { outcome: "processed", attempts: attempt };
       } catch (handlerError) {
         const error = toError(handlerError);
 
@@ -218,7 +238,7 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
             error,
             attempt,
           );
-          return;
+          return { outcome: "dlq", attempts: attempt };
         }
 
         const delayMs = retry.baseDelayMs * 2 ** (attempt - 1);
@@ -229,6 +249,38 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
         await payload.heartbeat();
         await sleep(delayMs);
       }
+    }
+
+    // Unreachable: retry.attempts >= 1, and the last attempt either returns
+    // or sends to the DLQ. Kept so the return type holds.
+    return { outcome: "dlq", attempts: retry.attempts };
+  };
+
+  // Observation must never affect consumption, so a throwing observer is
+  // logged and swallowed rather than allowed to fail the message.
+  const observe = (
+    payload: EachMessagePayload,
+    startedAt: number,
+    result: ProcessResult | null,
+  ): void => {
+    if (!onMessageObserved) return;
+
+    const producedAt = Number(payload.message.timestamp);
+    const hasTimestamp = Number.isFinite(producedAt) && producedAt > 0;
+
+    try {
+      onMessageObserved({
+        topic: payload.topic,
+        // Clamped: producer and consumer clocks can disagree slightly.
+        waitSeconds: hasTimestamp
+          ? Math.max(0, (startedAt - producedAt) / 1000)
+          : null,
+        processingSeconds: (Date.now() - startedAt) / 1000,
+        attempts: result?.attempts ?? 0,
+        outcome: result?.outcome ?? "error",
+      });
+    } catch (err) {
+      logger.warn({ err, topic: payload.topic }, "Message observer threw");
     }
   };
 
@@ -247,7 +299,14 @@ export function createConsumer(config: ConsumerFactoryConfig): KafkaConsumer {
 
     await consumer.run({
       eachMessage: async (payload) => {
-        await processMessage(payload, handlers);
+        const startedAt = Date.now();
+        let result: ProcessResult | null = null;
+
+        try {
+          result = await processMessage(payload, handlers);
+        } finally {
+          observe(payload, startedAt, result);
+        }
       },
     });
   };
