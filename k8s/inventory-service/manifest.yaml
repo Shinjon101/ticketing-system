@@ -51,15 +51,29 @@ spec:
             limits:
               cpu: "1500m"
               memory: "256Mi"
+          # Startup holds back the other two probes until the server is
+          # listening (after DB, Kafka and the consumer group join), up to 2m.
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 4006
+            periodSeconds: 5
+            failureThreshold: 24
+          # Readiness may fail under load (pool saturated): the pod only stops
+          # receiving traffic until it recovers.
           readinessProbe:
             httpGet:
               path: /health
               port: 4006
-            initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Liveness restarts the container, so it only checks that the event
+          # loop answers at all, and tolerates ~2m of a CPU-starved pod.
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: 4006
-            initialDelaySeconds: 15
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6

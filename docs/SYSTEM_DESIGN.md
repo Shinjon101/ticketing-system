@@ -1477,6 +1477,20 @@ Each service exposes `GET /health` with pool stats:
 
 Returns 503 if the DB connection pool is degraded (`waiting > 0 AND active/total > 0.9`).
 
+`GET /health/live` returns 200 whenever the process can answer at all. It checks nothing else.
+
+The two endpoints back different k8s probes because the probes do different things on failure:
+
+| Probe | Endpoint | On failure | Settings |
+|---|---|---|---|
+| Startup | `/health/live` | holds back the other probes | every 5s, up to 2m |
+| Readiness | `/health` | pod removed from the Service, not restarted | 3s timeout, 3 failures |
+| Liveness | `/health/live` | container restarted | 5s timeout, 6 failures at 20s (~2m) |
+
+Liveness used to share `/health` with the 1s default timeout. In the 160/s flash-sale run a booking pod was CPU-bound and answered slowly, so liveness restarted it. The restart triggered a consumer-group rebalance that paused the `seat-failed` backlog that was making the pod busy in the first place. Liveness should only catch a process that is stuck for good: never load, never a dependency (a Postgres outage would otherwise restart every pod at once).
+
+The Docker `HEALTHCHECK` and docker-compose keep using `/health`.
+
 ### A real incident, for the record
 
 Early in observability setup, app logs weren't appearing in Grafana at all. Root cause: booking-service and event-service's outbox pollers were throwing `relation "outbox_events" does not exist` every 500ms in a tight retry loop migrations hadn't been run before the stack started, so the flood of identical error logs was drowning out everything else and crash-looping the containers. Fix: **run migrations before starting the stack**, always. This is now a hard prerequisite, not a nice-to-have.
