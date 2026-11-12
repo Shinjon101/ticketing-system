@@ -27,6 +27,10 @@ export const createApp = (): Application => {
   app.use("/auth", authRouter);
   app.use("/auth", userRouter);
 
+  app.get("/health/live", (_req, res) => {
+    res.status(200).json({ status: "ok" });
+  });
+
   app.get("/health", (_req, res) => {
     const pool = getPoolStats();
     const isDegraded = pool.waiting > 0 && pool.active / pool.total > 0.9;

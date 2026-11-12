@@ -6,7 +6,7 @@ import { pathWithoutQuery } from "./request-path";
 
 const REQUEST_ID_HEADER = "x-request-id";
 const VALID_REQUEST_ID = /^[\w-]{1,128}$/;
-const QUIET_PATHS = new Set(["/health", "/metrics"]);
+const QUIET_PATHS = new Set(["/health", "/health/live", "/metrics"]);
 
 interface SerializedRequest {
   id: unknown;
