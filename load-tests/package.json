@@ -5,9 +5,9 @@
   "private": true,
   "main": "index.js",
   "scripts": {
-    "loadtest:smoke": "dotenv -e .env -e .env.smoke -- k6 run scenarios/01-smoke.ts",
-    "loadtest:flash": "dotenv -e .env -e .env.flash-sale -- k6 run scenarios/02-flash-sale.ts",
-    "loadtest:all": "pnpm run loadtest:smoke && pnpm run loadtest:flash-sale"
+    "loadtest:smoke": "dotenv -e .env -e .env.smoke -- k6 run -o experimental-prometheus-rw scenarios/01-smoke.ts",
+    "loadtest:flash": "dotenv -e .env -e .env.flash-sale -- k6 run -o experimental-prometheus-rw scenarios/02-flash-sale.ts",
+    "loadtest:all": "pnpm run loadtest:smoke && pnpm run loadtest:flash"
   },
   "keywords": [],
   "author": "",

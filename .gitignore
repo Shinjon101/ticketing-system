@@ -52,3 +52,6 @@ override.tf
 override.tf.json
 .terraformrc
 terraform.rc
+
+# k6 run output (tee)
+load-tests/run-*.txt
