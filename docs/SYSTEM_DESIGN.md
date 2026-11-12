@@ -2,7 +2,7 @@
 
 **Status:** V4
 **Goal:** Learn system design/tradeoffs, microservices systems, DevOps concepts, observability/monitoring, following best practices
-**Last updated:** 10th October, 2026.
+**Last updated:** 12th November, 2026.
 
 ---
 
@@ -23,10 +23,11 @@
 13. [Local Development](#13-local-development)
 14. [Infrastructure](#14-infrastructure)
 15. [CI/CD: GitHub Actions](#15-cicd-github-actions)
-16. [Observability](#16-observability)
-17. [Load Testing](#17-load-testing)
-18. [Architecture Decision Records](#18-architecture-decision-records)
-19. [Future Steps](#19-future-steps)
+16. [Cloud Deployment: Azure AKS](#16-cloud-deployment-azure-aks)
+17. [Observability](#17-observability)
+18. [Load Testing](#18-load-testing)
+19. [Architecture Decision Records](#19-architecture-decision-records)
+20. [Future Steps](#20-future-steps)
 
 ---
 
@@ -1167,7 +1168,7 @@ Lean, explicit Dockerfiles are used per service rather than one parameterized `A
 
 ### docker-compose (current local orchestration)
 
-Five Postgres instances (one per service, ports 5432–5436), Redis, single-node Kafka (KRaft mode, no Zookeeper), Kafka UI, plus the full observability stack (§14). All 5 application services build and run from `docker-compose.yaml`.
+Five Postgres instances (one per service, ports 5432–5436), Redis, single-node Kafka (KRaft mode, no Zookeeper), Kafka UI, plus the full observability stack (§17). All 5 application services build and run from `docker-compose.yaml`.
 
 ### Kubernetes (local, Kind)
 
@@ -1284,53 +1285,9 @@ The Application (`argocd/application.yaml`) syncs `k8s/` from `main` (recursive,
 
 Migrate Jobs run on every sync (including image bumps). That's safe since Drizzle migrations are idempotent, and it means a new image's migrations always finish before its pods start. The admin seed is idempotent too (creates or promotes the admin user, otherwise no-op).
 
-### Cloud: Azure + Terraform
+### Cloud (Azure AKS)
 
-Infra code lives in `infra/terraform/` (`azurerm ~> 4.0`, Terraform `>= 1.9`). Terraform owns the resource group and everything inside it, so `destroy` leaves nothing behind — after a teardown the only resource groups left in the subscription are the state one and Azure's own `NetworkWatcherRG`.
-
-What it provisions:
-
-- **`rg-ticketing-dev`**, as a `resource` rather than a `data` source. The earlier design read a hand-created group and deliberately stopped at its boundary; owning it is the better trade for an environment that gets spun up for a few hours and destroyed, because the guarantee that nothing is left billing is worth more than the guard against an over-broad destroy.
-- **`aks-ticketing-dev`**,  Kubernetes 1.36, `Free` control plane tier, `SystemAssigned` identity, `network_plugin = "azure"` (Azure CNI) on the VNet AKS creates for itself.
-- **Node pool** , `Standard_DS2_v2`, autoscaling between 2 and 3 nodes.
-
-#### Remote state
-
-State went to an Azure Blob backend **before** the cluster existed, because `azurerm_kubernetes_cluster` writes `kube_config` into state in plaintext, the container's RBAC is effectively the access control on cluster-admin credentials.
-
-It lives in its own resource group (`rg-ticketing-tfstate`), outside the blast radius of `terraform destroy`. Terraform can't create the storage account that holds its own state, so this part is bootstrapped by hand, once:
-
-```bash
-az group create -n rg-ticketing-tfstate -l indiasouthcentral
-
-az storage account create -n <storage-account> -g rg-ticketing-tfstate -l indiasouthcentral   --sku Standard_LRS --kind StorageV2 --min-tls-version TLS1_2   --allow-blob-public-access false --allow-shared-key-access false
-
-az storage account blob-service-properties update -n <storage-account> -g rg-ticketing-tfstate   --enable-versioning true --enable-delete-retention true --delete-retention-days 7
-
-az role assignment create --assignee <your-upn>   --role "Storage Blob Data Contributor"   --scope "<storage-account-id>"
-
-az storage container create -n tfstate --account-name <storage-account> --auth-mode login
-```
-
-Three things there are deliberate:
-
-- **`--allow-shared-key-access false`.** `Contributor` on a storage account includes `listKeys`, so without this the data-plane role below is advisory rather than a boundary. Disabling shared keys makes RBAC the only way in.
-- **`Storage Blob Data Contributor`, not `Contributor`.** Azure splits storage into a control plane (manage the account) and a data plane (read the bytes). Owner grants the first and not the second, which is the error everyone hits once. Contributor rather than Reader because Terraform takes a **blob lease** to lock state, and leasing is a write.
-- **Versioning.** Local state gets a free `.tfstate.backup` on every write; remote state gets nothing. Versioning is the replacement, and the only recovery from a bad `state rm`.
-
-
-#### Credentials
-
-Terraform runs as the account owner via `az login`; the provider picks the CLI session up automatically. No secret is stored anywhere.
-
-A service principal scoped to the single resource group was tried first and dropped. The scope was sound, but it couldn't create the resource group, register providers, or create role assignments, so every interesting step had to be run as the owner anyway, and the principal was never actually exercised. A service principal is a *CI* concern, and when CI runs Terraform it should use OIDC federation rather than a client secret, so that scaffolding was deleted rather than carried.
-
-**References followed:**
-
-- [HashiCorp's Azure get-started tutorial](https://developer.hashicorp.com/terraform/tutorials/azure-get-started/azure-build) and [MS Learn's AKS + Terraform quickstart](https://learn.microsoft.com/en-us/azure/aks/learn/quick-kubernetes-deploy-terraform) for the overall shape
-- [Store Terraform state in Azure Storage](https://learn.microsoft.com/en-us/azure/developer/terraform/store-state-in-azure-storage) followed, but with Entra ID auth instead of the `ARM_ACCESS_KEY` the article uses
-- [`backend "azurerm"`](https://developer.hashicorp.com/terraform/language/backend/azurerm) and [authorizing blob access with Entra ID](https://learn.microsoft.com/en-us/azure/storage/blobs/authorize-access-azure-active-directory)
-- [`azurerm_kubernetes_cluster`](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/kubernetes_cluster) and [AKS node resource reservations](https://learn.microsoft.com/en-us/azure/aks/node-resource-reservations)
+The same manifests deploy unchanged to an AKS cluster provisioned with Terraform, see §16.
 
 ## 15. CI/CD: GitHub Actions
 
@@ -1387,7 +1344,148 @@ None of these were in code that changed in the failing commit, a new CVE was pub
 
 ---
 
-## 16. Observability
+## 16. Cloud Deployment: Azure AKS
+
+The same `k8s/` manifests that run on Kind were deployed to Azure Kubernetes Service, on a cluster provisioned with Terraform. The cluster was brought up, verified (smoke tests and a GitOps rollout under live traffic), then removed with `terraform destroy`. It isn't left running: the whole environment is reproducible from `infra/terraform/` and git, so it only exists while it's being used.
+
+Locally on Kind I need `cloud-provider-kind` to make the load balancer reachable, but AKS auto-provsions an external IP to the load balancer so that the application can be reached.
+
+### Terraform
+
+Infra code lives in `infra/terraform/` (`azurerm ~> 4.0`, Terraform `>= 1.9`). Terraform owns the resource group and everything inside it, so `destroy` leaves nothing behind. After a teardown the only resource groups left in the subscription are the state one and Azure's own `NetworkWatcherRG`.
+
+What it provisions:
+
+- **`rg-ticketing-dev`**, as a `resource` rather than a `data` source. The earlier design read a hand-created group and deliberately stopped at its boundary. Owning it is the better trade for an environment that gets spun up for a few hours and destroyed, because the guarantee that nothing is left billing is worth more than the guard against an over-broad destroy.
+- **`aks-ticketing-dev`**, Kubernetes 1.36, `Free` control plane tier, `SystemAssigned` identity, `network_plugin = "azure"` (Azure CNI) on the VNet AKS creates for itself.
+- **Node pool**, 2 × `Standard_DS2_v2` (2 vCPU / 7 GiB), autoscaling off. Both numbers come from the subscription's quota, not from load.
+
+### Remote state
+
+State went to an Azure Blob backend **before** the cluster existed, because `azurerm_kubernetes_cluster` writes `kube_config` into state in plaintext. The container's RBAC is effectively the access control on cluster-admin credentials.
+
+It lives in its own resource group (`rg-ticketing-tfstate`), outside the blast radius of `terraform destroy`. Terraform can't create the storage account that holds its own state, so this part is bootstrapped by hand, once:
+
+```bash
+az group create -n rg-ticketing-tfstate -l indiasouthcentral
+
+az storage account create -n <storage-account> -g rg-ticketing-tfstate -l indiasouthcentral   --sku Standard_LRS --kind StorageV2 --min-tls-version TLS1_2   --allow-blob-public-access false --allow-shared-key-access false
+
+az storage account blob-service-properties update -n <storage-account> -g rg-ticketing-tfstate   --enable-versioning true --enable-delete-retention true --delete-retention-days 7
+
+az role assignment create --assignee <your-upn>   --role "Storage Blob Data Contributor"   --scope "<storage-account-id>"
+
+az storage container create -n tfstate --account-name <storage-account> --auth-mode login
+```
+
+Three things there are deliberate:
+
+- **`--allow-shared-key-access false`.** `Contributor` on a storage account includes `listKeys`, so without this the data-plane role below is advisory rather than a boundary. Disabling shared keys makes RBAC the only way in.
+- **`Storage Blob Data Contributor`, not `Contributor`.** Azure splits storage into a control plane (manage the account) and a data plane (read the bytes). Owner grants the first and not the second, which is the error everyone hits once. Contributor rather than Reader because Terraform takes a **blob lease** to lock state, and leasing is a write.
+- **Versioning.** Local state gets a free `.tfstate.backup` on every write; remote state gets nothing. Versioning is the replacement, and the only recovery from a bad `state rm`.
+
+### Credentials
+
+Terraform runs as the account owner via `az login`. The provider picks the CLI session up automatically, so no secret is stored anywhere.
+
+A service principal (`sp-terraform-ticketing`) scoped to the single resource group came first. The scope was sound, but the principal couldn't create the resource group, register resource providers (a subscription-level write) or create role assignments, so every interesting step had to run as the owner anyway. Logging out of the Azure CLI settled it: `terraform plan` failed straight away, because Terraform had been authenticating with the CLI session all along. The service principal was never actually exercised.
+
+### Fitting into the subscription
+
+Two subscription-level constraints shaped the cluster before any Kubernetes decision did.
+
+**Region policy.** An early `terraform apply` failed with `403 RequestDisallowedByAzure` while creating the VNet in `centralindia`. The subscription carries an Azure Policy (`sys.regionrestriction`) that only allows five regions: `koreacentral`, `uaenorth`, `malaysiawest`, `indiasouthcentral` and `eastasia`. The resource group was recreated in `indiasouthcentral` and its role assignment re-granted. The policy applies to every resource, so the state storage account lives there too.
+
+**Quota.** The subscription allows 6 regional vCPUs in total, 4 for the DSv2 family and 0 for every v5 family. The portal's VM size picker shows which sizes exist in a region, not which ones the quota allows; `az vm list-usage -l <region> -o table` does. That leaves 2 × `Standard_DS2_v2`, the entire DSv2 allowance. Autoscaling was enabled at first (`c8e921a`) and turned off again (`c1db51c`): a third node needs 6 DSv2 vCPUs, so the autoscaler could only ever fail to scale up.
+
+**Sizing.** AKS reserves part of each node for the kubelet, the OS and the eviction threshold, leaving about 3.8 CPU / 12.5 GiB allocatable across both nodes. The application's requests come to about 1.9 CPU / 3.9 GiB, which leaves room for `kube-system`, the observability stack and ArgoCD. Legacy Azure CNI defaults to 30 pods per node, and the full stack runs about 52 pods against that ceiling of 60.
+
+<!-- Explain: request vs limit, why memory gets a limit and CPU doesn't, which QoS class each pod lands in, and what runs out first if you add replicas (pod slots or CPU requests). -->
+
+### Preparing the manifests
+
+Kind is forgiving in ways a cloud cluster isn't. None of these were hit on AKS; they were found by reading the manifests against AKS's defaults before the first apply:
+
+- **Storage class.** `storageClassName: standard` only exists on Kind (local-path). On AKS the PVCs would sit `Pending` forever with no error surfaced on the StatefulSet. The field is omitted from all 7 `volumeClaimTemplates`, so each cluster uses its own default class (Azure Disk CSI on AKS).
+- **Resource requests.** The 5 Postgres StatefulSets, Kafka and Redis had no `resources` block, which made them BestEffort: the scheduler treated them as free, and the kubelet would evict the databases before the stateless services. They now request CPU and memory, with a memory limit and no CPU limit. Exceeding a memory limit is an OOMKill; exceeding a CPU limit only throttles, and a hard cap on Postgres during a load test hurts for no benefit. `booking-db` and `inventory-db` get more than the others since they carry the seat-locking hot path.
+- **`PGDATA` subdirectory.** A fresh Azure Disk is formatted ext4 and contains `lost+found`, and `initdb` refuses to initialise a non-empty directory. All 5 DB ConfigMaps set `PGDATA=/var/lib/postgresql/data/pgdata`. Kind never needed it because local-path hands out an empty host directory.
+- **Kafka.** The same reasoning moves the log dir to a subdirectory (`KAFKA_LOG_DIRS=/var/lib/kafka/data/logs`), and `fsGroup: 1000` lets the non-root `apache/kafka` image write to the mounted volume. The image is pinned to `4.3.1` with a `768m` heap inside a `1536Mi` limit, since the JVM needs headroom beyond the heap for metaspace, thread stacks and Kafka's network buffers.
+- **Redis.** `--maxmemory 192mb --maxmemory-policy volatile-lru` inside a `256Mi` limit, so Redis evicts expiring keys before the kernel kills the container.
+
+<!-- Explain: what fsGroup does, and what happens to an Azure Disk when its pod is rescheduled onto the other node. -->
+
+### Observability on a two-node budget
+
+The full `kube-prometheus-stack` doesn't fit next to the application on 4 vCPUs, so the Helm values were slimmed (`fdc5abb`). Alertmanager, kube-state-metrics, node-exporter, the default alert rules and the control-plane and kubelet scrapers are disabled. Loki runs without its caches, canary and gateway. Alloy ships only the `default` namespace's logs, not `kube-system`, `observability` or `argocd`. Every component has requests and a memory limit.
+
+What remains is what the load tests read: the services' own metrics through the `ServiceMonitor`, the Grafana dashboards, and the application logs in Loki.
+
+### Bringing the stack up
+
+Same order as "Rebuilding the cluster from scratch" (§14), with Terraform in place of `kind create cluster` and no `cloud-provider-kind`:
+
+```bash
+cd infra/terraform
+terraform init
+terraform apply
+
+az aks get-credentials -g rg-ticketing-dev -n aks-ticketing-dev
+```
+
+Then steps 2 to 5 from §14 unchanged: Gateway API CRDs and NGINX Gateway Fabric, the observability Helm charts, the secrets by hand, ArgoCD and the same `Application`. ArgoCD's sync waves do the rest: databases, Kafka and Redis, then the migrate Jobs, then the Deployments, then the PostSync admin seed.
+
+### Networking and ingress
+
+- **Azure CNI** (`network_plugin = "azure"`) gives every pod an IP from the VNet AKS creates for itself, rather than from an overlay range. Each node reserves VNet IPs for its maximum pod count up front, which is why max pods per node is a planning number and not just a scheduler limit.
+- **Gateway.** On Kind, `cloud-provider-kind` stands in for a cloud load balancer. On AKS, NGINX Gateway Fabric's `type: LoadBalancer` Service gets a real public IP on the cluster's Azure Standard Load Balancer, and the same `HTTPRoute`s apply unchanged. There is no domain or TLS; clients use the IP.
+- **Admin UIs** (Grafana, Prometheus, ArgoCD) stay behind `kubectl port-forward`, as on Kind. The Prometheus port-forward is also how k6 remote-writes its metrics during a run.
+
+<!-- Explain: what Azure added to the MC_ node resource group for the gateway Service, and what is reachable from the internet (the gateway IP, and the AKS API server). -->
+
+### Verifying it
+
+- **Smoke test.** `pnpm loadtest:smoke` ran twice against the gateway.
+- **GitOps end to end.** A no-op commit to event-service (`36392b1`) went through the full pipeline: CI, the Trivy gate, push to GHCR, then the `sha-` bump commit (`a11050d`). ArgoCD rolled it out on AKS while a `curl` loop against `/events` ran throughout, to check that a rolling update doesn't drop client requests.
+
+<!-- Record what the curl loop actually showed (any non-200s?) and the smoke-test numbers if you kept them. -->
+
+### Problems hit
+
+In the order they came up:
+
+1. **Region policy.** `403 RequestDisallowedByAzure` in `centralindia`, covered above.
+2. **Provider registration.** The RG-scoped service principal can't register resource providers, so the provider block sets `resource_provider_registrations = "none"` and the ones needed (`Microsoft.ContainerService` among them) were registered by hand (`az provider show -n <namespace> --query registrationState`). That argument only exists in azurerm v4, so the provider moved from a v3 pin to `~> 4.0`.
+3. **The wrong identity.** `az logout` showed that Terraform had been running as the CLI user, never as the service principal (see "Credentials").
+4. **Design change partway through.** The first version read a hand-made resource group as a `data` source and built its own VNet (`3d8e68b`). A bring-your-own subnet for AKS needs role assignments the service principal couldn't create, so Terraform now owns the resource group and lets AKS manage its own VNet. That also makes `destroy` complete.
+
+### Teardown and cost
+
+`terraform destroy` removes the resource group and everything in it, including the node resource group AKS creates (`MC_...`), the Azure Disks behind every PVC, and the public IP. Afterwards only `rg-ticketing-tfstate` (a few cents a month of blob storage) and Azure's own `NetworkWatcherRG` remain. The state has to sit outside what it describes: a destroy that took its own state with it would leave nothing to compare against on the next apply.
+
+The `Free` tier only waives the control-plane fee. The two VMs, their OS disks, the PVC disks and the public IP all bill while the cluster exists, which is why it's brought up for a session and destroyed rather than left running.
+
+<!-- Add the real numbers from your bill: cost per hour or per day while running, and total spend. -->
+
+### What this deployment is not
+
+It's a faithful deployment of the system, not a production environment:
+
+- **Kafka:** a single broker with replication factor 1, so losing the broker's disk loses events.
+- **Postgres:** one pod per service on an Azure Disk, with no replicas, backups or point-in-time recovery. Production would use a managed service (Azure Database for PostgreSQL).
+- **Availability:** one node pool, no availability zones, no PodDisruptionBudgets, no HPA.
+- **Secrets:** applied by hand, outside GitOps (next step: External Secrets with Key Vault, or Sealed Secrets).
+- **Exposure:** no TLS or domain on the gateway, and the AKS API server is public.
+
+### References followed
+
+- [HashiCorp's Azure get-started tutorial](https://developer.hashicorp.com/terraform/tutorials/azure-get-started/azure-build) and [MS Learn's AKS + Terraform quickstart](https://learn.microsoft.com/en-us/azure/aks/learn/quick-kubernetes-deploy-terraform) for the overall shape
+- [Store Terraform state in Azure Storage](https://learn.microsoft.com/en-us/azure/developer/terraform/store-state-in-azure-storage) followed, but with Entra ID auth instead of the `ARM_ACCESS_KEY` the article uses
+- [`backend "azurerm"`](https://developer.hashicorp.com/terraform/language/backend/azurerm) and [authorizing blob access with Entra ID](https://learn.microsoft.com/en-us/azure/storage/blobs/authorize-access-azure-active-directory)
+- [`azurerm_kubernetes_cluster`](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/kubernetes_cluster) and [AKS node resource reservations](https://learn.microsoft.com/en-us/azure/aks/node-resource-reservations)
+
+---
+
+## 17. Observability
 
 ### Structured logs (Pino)
 
@@ -1481,13 +1579,13 @@ Returns 503 if the DB connection pool is degraded (`waiting > 0 AND active/total
 
 The two endpoints back different k8s probes because the probes do different things on failure:
 
-| Probe | Endpoint | On failure | Settings |
-|---|---|---|---|
-| Startup | `/health/live` | holds back the other probes | every 5s, up to 2m |
-| Readiness | `/health` | pod removed from the Service, not restarted | 3s timeout, 3 failures |
-| Liveness | `/health/live` | container restarted | 5s timeout, 6 failures at 20s (~2m) |
+| Probe     | Endpoint       | On failure                                  | Settings                            |
+| --------- | -------------- | ------------------------------------------- | ----------------------------------- |
+| Startup   | `/health/live` | holds back the other probes                 | every 5s, up to 2m                  |
+| Readiness | `/health`      | pod removed from the Service, not restarted | 3s timeout, 3 failures              |
+| Liveness  | `/health/live` | container restarted                         | 5s timeout, 6 failures at 20s (~2m) |
 
-Liveness used to share `/health` with the 1s default timeout. In the 160/s flash-sale run a booking pod was CPU-bound and answered slowly, so liveness restarted it. The restart triggered a consumer-group rebalance that paused the `seat-failed` backlog that was making the pod busy in the first place. Liveness should only catch a process that is stuck for good: never load, never a dependency (a Postgres outage would otherwise restart every pod at once).
+Liveness used to share `/health` with the 1s default timeout. In the 160/s flash-sale run (§18) a booking pod was CPU-bound and answered slowly, so liveness restarted it. The restart triggered a consumer-group rebalance that paused the `seat-failed` backlog that was making the pod busy in the first place. Liveness should only catch a process that is stuck for good: never load, never a dependency (a Postgres outage would otherwise restart every pod at once).
 
 The Docker `HEALTHCHECK` and docker-compose keep using `/health`.
 
@@ -1497,7 +1595,7 @@ Early in observability setup, app logs weren't appearing in Grafana at all. Root
 
 ---
 
-## 17. Load Testing
+## 18. Load Testing
 
 **Tool:** k6, with Prometheus remote-write output and a Grafana dashboard for
 live monitoring during runs. Tested against the project's local Kind
@@ -1510,9 +1608,14 @@ inter-service networking.
 Rather than guessing a single large load number, throughput was found via
 incremental doubling: run a `ramping-arrival-rate` profile with a held peak
 (not just a ramp through it), confirm it's clean, double the peak, repeat.
-Each profile ramps up, holds at peak for 20s, then cools down to simulate sustained pressure on the system.
 
-### Results
+The first round held each peak for 20s. The profile (`load-tests/config/profiles.ts`) now takes `PEAK_RATE`, `RAMP`, `HOLD` and `MAX_VUS` from the environment and holds for 2 minutes by default, so the hold spans several Prometheus scrapes instead of only the ramp. A `dropped_iterations` threshold fails the run if k6 itself runs out of VUs, because then the system never saw the intended rate.
+
+```bash
+PEAK_RATE=160 pnpm loadtest:flash 2>&1 | tee run-160.txt
+```
+
+### Results (first round)
 
 | Peak (req/s) | http_req_failed           | saga_resolution p95         | Outcome                                                                  |
 | ------------ | ------------------------- | --------------------------- | ------------------------------------------------------------------------ |
@@ -1521,12 +1624,13 @@ Each profile ramps up, holds at peak for 20s, then cools down to simulate sustai
 | 80           | 0.00%                     | ~1.0s                       | Clean (after CPU limit fix, see below)                                   |
 | 160          | 0.00% (1/24,679 requests) | 12.5s                       | HTTP/correctness layer clean; saga latency degrades under sustained peak |
 
-At the 160 req/s peak, actual measured HTTP throughput hit **~2,000 requests/second**
-(distinct from the 160/s _iteration_ rate, since each booking iteration includes
-several HTTP calls). Applying Little's Law to the observed saga latency at that
-load (`160 req/s x ~5.8s avg latency`) gives ~930 concurrent bookings in flight
-simultaneously, consistent with this project's original goal of handling
-1,000+ concurrent booking requests without overselling.
+At the 160 req/s peak k6 counted about 2,000 HTTP requests per second. That
+figure counts every call an iteration makes, mostly status polls, so it isn't
+a booking rate. The ~930 bookings in flight that Little's Law gives at that load
+(`160 req/s x ~5.8s avg latency`) isn't concurrency the system handled either:
+it's the size of the queue, bookings waiting for the saga to catch up. This
+round also predates the per-hop metrics, so it shows that saga latency degraded
+but not where. The per-hop runs below answer that.
 
 **Zero overselling at every load level tested**, verified both via k6's own
 counters and directly against Postgres (`seats.status = 'booked'` never
@@ -1560,6 +1664,53 @@ so this was purely a too-conservative per-pod limit, not a real capacity
 shortage. Raised both services to `1500m`; verified via re-run that the
 inter-message gap dropped ~7x and the associated HTTP failures disappeared.
 
+### Per-hop runs with saga pipeline metrics (Nov 2026)
+
+Same Kind cluster, with k6 running on the same laptop. 250 seats; `PEAK_RATE` held for 2 minutes.
+
+|                                                       | 40/s            | 160/s target                                |
+| ----------------------------------------------------- | --------------- | ------------------------------------------- |
+| Bookings accepted                                     | 5,439           | 7,193 (~48/s actually got through)          |
+| Oversold / duplicate seats / stuck `pending`          | 0 / 0 / 0       | 0 / 0 / 0                                   |
+| Server-side `seat_held` p50 / p95                     | 278 ms / 478 ms | degraded                                    |
+| Hop 1 booking outbox, p95                             | 482 ms          | ~1 s                                        |
+| Hop 5 Kafka → booking (`seat-failed` wait), p50 / p95 | 20 ms / 71 ms   | 17 s / 54 s                                 |
+| Booking handler mean                                  | ~5 ms           | ~42 ms                                      |
+| Booking pod CPU                                       | low             | ~0.93 core each (Node's single thread full) |
+| Booking consume rate                                  | matched input   | ~16 msg/s per pod vs ~48/s arriving         |
+| Pod restarts                                          | 0               | 1 (liveness timeout)                        |
+| k6 `EOF` connection drops                             | 0               | ~27k (host port-forward, not the services)  |
+
+**At 40/s the system is idle.** About 80% of the server-side saga time is the
+two outbox pollers waiting for their next cycle (500 ms in booking, 150 ms in
+inventory, §11.1). No outbox batch came back full, at most 2 of 20 DB
+connections were busy, nothing waited for a connection, and bookings resolved
+as fast as they were created. That's the design's latency floor, not saturation.
+
+**At 160/s the booking consumer is the bottleneck.** KafkaJS's `eachMessage`
+handles one message at a time per pod, so a pod drains at most 1 ÷ handler
+time messages per second. The same Node thread also serves the HTTP API, mostly
+k6 polling booking status once a second, and both booking pods ran at a full
+core. Handler time went from about 5 ms to about 42 ms, each pod drained about
+16 messages a second against about 48 arriving, and the difference queued in
+Kafka: hop 5 is time spent waiting in that backlog. It fed itself, since a
+slower saga kept each k6 VU polling longer, which put more requests on the same
+thread. The liveness probe then restarted a busy pod (§17 "Health checks"), and
+the consumer-group rebalance stopped consumption entirely for those seconds.
+The backlog only drained once k6 stopped.
+
+**Correctness held throughout.** Every accepted booking resolved, no seat was
+held twice, both outboxes ended empty, and the Redis counter matched Postgres.
+
+**The k6 error rate isn't a service number.** About 27k requests at 160/s
+failed with `EOF` at a steady rate and never reached the booking service, and
+nginx logged nothing. The likeliest cause is Docker Desktop's host-to-Kind port
+forwarding under ~1,600 open connections, and k6 also shares the laptop's 12
+cores with the whole cluster. Until the generator runs inside the cluster or
+against AKS, `http_req_failed` from this setup measures the laptop.
+
+<!-- Explain in your own words why the backlog grows instead of settling, and what each fix in §20 would change in this table. -->
+
 ### Known gap (closed)
 
 ~~`outbox_events`/`processed_events` grow unbounded (no cleanup job yet --
@@ -1568,7 +1719,7 @@ directly: these tables reached millions of rows across repeated test runs~~
 
 ---
 
-## 18. Architecture Decision Records
+## 19. Architecture Decision Records
 
 ### ADR-001 - Saga choreography over orchestration
 
@@ -1644,8 +1795,30 @@ directly: these tables reached millions of rows across repeated test runs~~
 
 ---
 
-## 19. Future Steps
+## 20. Future Steps
 
 ### Immediate next steps
 
-1. **AKS cluster in Terraform:** state to an Azure Blob backend first, then the cluster on AKS's own managed VNet (Free tier, one node pool), then ArgoCD + the same `Application` on it
+1. ~~**AKS cluster in Terraform:** state to an Azure Blob backend first, then the cluster on AKS's own managed VNet (Free tier, one node pool), then ArgoCD + the same `Application` on it~~ Done: deployed, verified and destroyed (§16).
+
+### Known gaps, found during deployment and load testing
+
+**Throughput (from §18):**
+
+- **Split the HTTP API from the Kafka consumer.** Run booking (and inventory) as two Deployments from the same image, an `api` and a `worker`, selected by an env var. HTTP load can then no longer starve the saga, and each side scales on its own signal: request rate for the API, consumer lag for the worker. Worker replicas are capped at the partition count, so partitions go up with them.
+- **Outbox ceiling.** Each poller publishes at most 100 rows and then sleeps for the full interval, even after a full batch, so booking tops out around 100 rows per ~0.5s per pod. Skip the sleep after a full batch, and publish the batch in one producer call instead of one awaited send per row.
+- **Sold-out fast path.** After sell-out, every request still runs the whole saga to learn there are no seats. Booking could reject early from the Redis availability counter, as a hint only; Postgres stays the authority.
+- **Client polling.** Status polls became most of the HTTP load at 160/s. `Retry-After`, a longer interval or server push (SSE) would take them off the hot path.
+- **Consumer concurrency.** `partitionsConsumedConcurrently` helps only while handlers wait on I/O. It doesn't help a pod whose CPU is already full, so it comes after the split.
+
+**Correctness and API:**
+
+- **Payment readiness.** Payment answers `404 No active hold` until `booking-seat-held` arrives, so a client that moves on at `seat_held` has to retry. It should be `409`/`425` with `Retry-After`.
+
+**Operations:**
+
+- A failing cleanup CronJob marks the ArgoCD sync as failed, so the PostSync admin seed never runs (seen on Kind: every login returned 401).
+- The NodeJS dashboard ConfigMap has `#` comments inside its JSON.
+- Secrets are outside GitOps (§16 "What this deployment is not").
+- event-service has no test suite.
+- k6 should run inside the cluster or against AKS, so the generator doesn't share CPU and Docker Desktop's port forwarding with the system under test.
