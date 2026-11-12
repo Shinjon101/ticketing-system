@@ -33,7 +33,7 @@ spec:
     spec:
       containers:
         - name: booking-service
-          image: ghcr.io/shinjon101/ticketing-booking-service:sha-c788fff
+          image: ghcr.io/shinjon101/ticketing-booking-service:sha-a6e7c97
           ports:
             - containerPort: 4005
           envFrom:
