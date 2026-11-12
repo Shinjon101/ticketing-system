@@ -34,7 +34,7 @@ spec:
     spec:
       containers:
         - name: event-service
-          image: ghcr.io/shinjon101/ticketing-event-service:sha-a6e7c97
+          image: ghcr.io/shinjon101/ticketing-event-service:sha-06be376
           ports:
             - containerPort: 4004
           envFrom:
